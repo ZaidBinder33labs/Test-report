@@ -82,8 +82,6 @@ footer a:hover{text-decoration:underline}
 </header>
 
 <div class="actions">
-  <a href="../qa-tool/qa-tool.html" class="primary">Open QA Tool</a>
-  <a href="../README.md">Documentation</a>
   <button class="refresh-btn" onclick="loadReports()">Refresh list</button>
 </div>
 
@@ -93,7 +91,6 @@ footer a:hover{text-decoration:underline}
 <div id="content"></div>
 
 <footer>
-  Auto-generated listing via GitHub API.
   <span id="last-updated"></span>
 </footer>
 
@@ -159,8 +156,7 @@ function loadReports(){
       contentEl.innerHTML =
         '<div class="error">' +
         '<h3>Could not load reports</h3>' +
-        '<p>' + escapeHtml(err.message) + '</p>' +
-        '<p style="margin-top:10px;font-size:12px">If this is a private repository, the GitHub API requires authentication. See the README for options.</p>' +
+        '<p>Please try refreshing in a moment. If the problem persists, contact the QA team.</p>' +
         '</div>';
     });
 }
@@ -171,14 +167,8 @@ function renderReports(reports){
   if(reports.length === 0){
     contentEl.innerHTML =
       '<div class="empty">' +
-      '<h3>No reports yet</h3>' +
-      '<p>Reports will appear here after you generate them in the QA tool and push to GitHub.<br><br>' +
-      'Steps:<br>' +
-      '1. Open the <code>qa-tool.html</code> and run your QA tests<br>' +
-      '2. Click <code>Generate HTML Report</code>. It downloads to your Downloads folder<br>' +
-      '3. Move the file into <code>qa-reports/</code> folder<br>' +
-      '4. <code>git add qa-reports/ && git commit -m "QA report" && git push</code><br>' +
-      '5. Refresh this page</p>' +
+      '<h3>Reports will appear here soon</h3>' +
+      '<p>QA reports are being prepared. Check back later or ping the QA team lead.</p>' +
       '</div>';
     return;
   }

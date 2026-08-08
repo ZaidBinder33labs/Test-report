@@ -1,0 +1,43 @@
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor
+.vscode/settings.json
+.vscode/launch.json
+.idea/
+*.swp
+*.swo
+*~
+
+# Node (if any tooling added later)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+
+# Python (if any scripts added later)
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env
+
+# Draft/local reports (do not push accidentally)
+qa-reports/draft-*.html
+qa-reports/local-*.html
+qa-reports/*.local.html
+
+# Sensitive
+*.pem
+*.key
+.env.local
+firebase-config.local.json
+
+# Temp
+*.tmp
+*.bak
+tmp/

@@ -1,0 +1,2037 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Binder OS — Team QA (Real-time + History)</title>
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-database-compat.js"></script>
+<style>
+:root{
+  --bg:#0b0d12; --panel:#141821; --panel2:#1c2130; --line:#2a2f3d;
+  --ink:#e6e9ef; --muted:#8b93a3; --dim:#5a6270;
+  --accent:#4f8cff; --accent2:#38d39f; --warn:#f5a524; --err:#ff6b6b;
+  --setup:#6b7a99; --main:#4f8cff; --wizard:#a78bfa; --prod:#38d39f; --close:#f5a524;
+  --pending:#4a5266; --inprog:#4f8cff; --working:#38d39f; --broken:#ff6b6b;
+  --health:#4f8cff; --biz:#a78bfa; --frontend:#f5a524;
+  --mono:'SF Mono',ui-monospace,'Cascadia Code',Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:var(--sans);background:var(--bg);color:var(--ink);font-size:14px;line-height:1.55;overflow-x:hidden}
+
+/* Modal */
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);z-index:100;
+          display:none;align-items:center;justify-content:center;padding:20px}
+.modal-bg.show{display:flex}
+.modal{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:26px 30px;
+       max-width:640px;width:100%;max-height:90vh;overflow-y:auto}
+.modal.wide{max-width:900px}
+.modal h2{margin:0 0 6px;font-size:19px}
+.modal p.sub{color:var(--muted);font-size:13px;margin:0 0 18px}
+.modal .field{margin-bottom:14px}
+.modal .field label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:600;margin-bottom:6px}
+.modal .field input, .modal .field textarea{
+  width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--ink);
+  padding:10px 12px;border-radius:6px;font-size:13px;font-family:var(--sans)}
+.modal .field textarea{font-family:var(--mono);font-size:12px;min-height:110px;resize:vertical}
+.modal .field input:focus, .modal .field textarea:focus{outline:none;border-color:var(--accent)}
+.modal .field .hint{font-size:11px;color:var(--dim);margin-top:5px;line-height:1.5}
+.modal .field .hint a{color:var(--accent2);text-decoration:none}
+.modal .field .hint a:hover{text-decoration:underline}
+.modal .actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+.modal .actions button{padding:9px 18px;border-radius:6px;border:1px solid var(--line);
+                        background:var(--panel2);color:var(--ink);cursor:pointer;font-family:var(--sans);font-size:13px}
+.modal .actions button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.modal .actions button.primary:hover{background:#3d78e6}
+.modal .actions button.danger{background:var(--err);border-color:var(--err);color:#fff}
+.modal .actions button.danger:hover{background:#e85555}
+.modal .actions button:hover{border-color:var(--accent)}
+.setup-step{padding:10px 12px;background:var(--panel2);border-radius:6px;margin-bottom:8px;
+            font-size:12.5px;line-height:1.6;border-left:3px solid var(--accent2)}
+.setup-step b{color:var(--accent2)}
+.setup-step code{background:var(--bg);padding:2px 6px;border-radius:3px;font-family:var(--mono);font-size:11.5px}
+.setup-step pre{background:var(--bg);padding:8px;border-radius:5px;font-size:11px;overflow:auto;margin:5px 0 0;font-family:var(--mono)}
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);margin-bottom:18px}
+.tabs .t{padding:9px 14px;background:transparent;border:none;color:var(--muted);cursor:pointer;
+         font-size:12.5px;border-bottom:2px solid transparent;font-family:var(--sans)}
+.tabs .t.active{color:var(--ink);border-bottom-color:var(--accent)}
+.tab-body{display:none}
+.tab-body.active{display:block}
+
+/* Run history */
+.run-list{max-height:60vh;overflow-y:auto;margin:0 -30px;padding:0 30px}
+.run-item{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:14px 16px;margin-bottom:10px;
+          cursor:pointer;transition:.15s}
+.run-item:hover{border-color:var(--accent)}
+.run-item .rh{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:8px}
+.run-item .rname{font-weight:600;font-size:14px}
+.run-item .rmeta{font-size:11px;color:var(--muted);font-family:var(--mono);margin-top:2px}
+.run-item .rcounts{display:flex;gap:6px;flex-wrap:wrap}
+.run-item .rcount{padding:3px 8px;border-radius:12px;font-size:10.5px;font-weight:500;font-family:var(--mono)}
+.run-item .rcount.pass{background:rgba(56,211,159,.12);color:var(--working)}
+.run-item .rcount.broken{background:rgba(255,107,107,.12);color:var(--broken)}
+.run-item .rcount.partial{background:rgba(79,140,255,.12);color:var(--inprog)}
+.run-item .rcount.pending{background:rgba(74,82,102,.2);color:var(--muted)}
+.run-item .rtesters{font-size:11px;color:var(--muted);margin-top:6px}
+.run-item .rtesters span{margin-right:8px}
+.run-empty{text-align:center;padding:40px 20px;color:var(--muted);font-size:13px}
+
+/* Run detail view */
+.rd-header{margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--line)}
+.rd-header h3{margin:0 0 4px;font-size:16px}
+.rd-header .rd-meta{font-size:11.5px;color:var(--muted);font-family:var(--mono)}
+.rd-summary{display:flex;gap:10px;margin:10px 0;flex-wrap:wrap}
+.rd-summary .box{background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:8px 12px;flex:1;min-width:100px}
+.rd-summary .box .n{font-size:20px;font-weight:600}
+.rd-summary .box .l{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-top:2px}
+.rd-summary .box.pass .n{color:var(--working)}
+.rd-summary .box.broken .n{color:var(--broken)}
+.rd-summary .box.partial .n{color:var(--inprog)}
+.rd-summary .box.pending .n{color:var(--muted)}
+.rd-mod{background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:10px 14px;margin-bottom:8px}
+.rd-mod .rd-mh{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:6px}
+.rd-mod .rd-mtitle{font-weight:600;font-size:13.5px}
+.rd-mod .rd-msub{font-size:11px;color:var(--muted)}
+.rd-mod .rd-status{padding:2px 8px;border-radius:12px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;flex-shrink:0}
+.rd-mod .rd-status.working{background:rgba(56,211,159,.15);color:var(--working)}
+.rd-mod .rd-status.broken{background:rgba(255,107,107,.15);color:var(--broken)}
+.rd-mod .rd-status.inprog{background:rgba(79,140,255,.15);color:var(--inprog)}
+.rd-mod .rd-status.pending{background:rgba(74,82,102,.3);color:var(--muted)}
+.rd-mod .rd-chk-group{margin-top:8px}
+.rd-mod .rd-chk-group h5{margin:6px 0 3px;font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:600}
+.rd-mod .rd-chk{font-size:11.5px;padding:3px 0;color:#c9d2e0;line-height:1.4}
+.rd-mod .rd-chk.done{color:var(--muted);text-decoration:line-through}
+.rd-mod .rd-chk .cby{color:var(--accent2);font-size:10px;font-family:var(--mono);margin-left:4px}
+.rd-mod .rd-notes{background:var(--bg);padding:6px 10px;border-radius:4px;font-size:12px;color:#d0d5e0;margin-top:6px;font-style:italic}
+.rd-mod .rd-comments{margin-top:8px}
+.rd-mod .rd-com{padding:4px 0;font-size:11.5px;color:#c9d2e0}
+.rd-mod .rd-com .cw{color:var(--accent2);font-weight:600;margin-right:6px}
+.rd-mod .rd-com .cd{color:var(--dim);font-size:10px;font-family:var(--mono);margin-left:6px}
+
+/* Header */
+header{padding:12px 22px;border-bottom:1px solid var(--line);background:var(--panel);
+       display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:30}
+header .htitle{font-size:15px;font-weight:600;letter-spacing:.2px}
+header .hsub{color:var(--muted);font-size:11.5px;margin-top:2px}
+.hctrl{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.presence-list{display:flex;gap:4px;align-items:center;padding:3px 6px;background:var(--panel2);
+               border:1px solid var(--line);border-radius:16px}
+.presence-list .p-user{width:24px;height:24px;border-radius:50%;background:var(--accent);
+                        display:flex;align-items:center;justify-content:center;color:#fff;
+                        font-size:10.5px;font-weight:600;border:2px solid var(--panel2);
+                        margin-left:-6px;cursor:default;position:relative}
+.presence-list .p-user:first-child{margin-left:0}
+.presence-list .p-user.me{border-color:var(--accent2)}
+.presence-list .p-user .p-tip{position:absolute;top:130%;right:0;background:var(--panel);
+                                border:1px solid var(--line);border-radius:5px;padding:4px 8px;
+                                font-size:10.5px;white-space:nowrap;display:none;z-index:5;color:var(--ink)}
+.presence-list .p-user:hover .p-tip{display:block}
+.progress{display:flex;align-items:center;gap:10px}
+.pbar{width:160px;height:8px;background:var(--panel2);border-radius:4px;overflow:hidden;border:1px solid var(--line)}
+.pbar>div{height:100%;background:linear-gradient(90deg,var(--accent2),var(--accent));transition:width .3s}
+.pcount{font-family:var(--mono);font-size:11px;color:var(--muted);min-width:78px;text-align:right}
+.btn{padding:6px 12px;background:var(--panel2);color:var(--ink);border:1px solid var(--line);
+     border-radius:6px;cursor:pointer;font-size:12px;font-family:var(--sans)}
+.btn:hover{border-color:var(--accent)}
+.btn-danger:hover{border-color:var(--err);color:var(--err)}
+.btn-success{background:var(--working);border-color:var(--working);color:#0b0d12;font-weight:600}
+.btn-success:hover{background:#2fbe89}
+.fb-status{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted);padding:4px 9px;
+           background:var(--panel2);border:1px solid var(--line);border-radius:16px}
+.fb-status .dot{width:7px;height:7px;border-radius:50%;background:var(--dim)}
+.fb-status.connected .dot{background:var(--working);box-shadow:0 0 6px var(--working)}
+.fb-status.offline .dot{background:var(--warn)}
+.run-info{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);padding:4px 9px;
+          background:var(--panel2);border:1px solid var(--line);border-radius:16px;font-family:var(--mono)}
+.run-info b{color:var(--accent2);font-weight:500}
+
+/* Main */
+.main-wrap{display:grid;grid-template-columns:1fr 440px;min-height:calc(100vh - 62px)}
+.flow-area{padding:16px 22px;overflow:auto}
+.legend{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:12px;font-size:11px;color:var(--muted)}
+.legend .li{display:flex;align-items:center;gap:5px}
+.legend .sq{width:10px;height:10px;border-radius:3px;border:1px solid var(--line)}
+.legend .sq.setup{background:var(--setup)} .legend .sq.main{background:var(--main)}
+.legend .sq.wizard{background:var(--wizard)} .legend .sq.prod{background:var(--prod)} .legend .sq.close{background:var(--close)}
+.legend .st{padding:2px 7px;border-radius:20px;font-size:10px;font-weight:500;letter-spacing:.3px}
+.legend .st.pending{background:rgba(74,82,102,.3);color:var(--muted)}
+.legend .st.inprog{background:rgba(79,140,255,.15);color:var(--inprog)}
+.legend .st.working{background:rgba(56,211,159,.15);color:var(--working)}
+.legend .st.broken{background:rgba(255,107,107,.15);color:var(--broken)}
+
+svg.flow{width:100%;height:auto;display:block;user-select:none}
+.section-label{font-size:11px;fill:var(--muted);text-transform:uppercase;letter-spacing:.6px;font-family:var(--sans);font-weight:600}
+.section-line{stroke:var(--line);stroke-width:1;stroke-dasharray:4,4;fill:none}
+.node-g{cursor:pointer;transition:filter .15s}
+.node-g:hover{filter:brightness(1.15)}
+.node-g.active .node-rect{stroke-width:2.5;stroke:var(--accent2);filter:drop-shadow(0 0 8px rgba(56,211,159,.4))}
+.node-rect{fill:var(--panel);stroke:var(--line);stroke-width:1.5;rx:8;transition:.15s}
+.node-g.setup .node-rect{fill:#1a2030;stroke:var(--setup)}
+.node-g.main .node-rect{fill:#141c2e;stroke:var(--main)}
+.node-g.wizard .node-rect{fill:#1e1a2e;stroke:var(--wizard)}
+.node-g.prod .node-rect{fill:#152a20;stroke:var(--prod)}
+.node-g.close .node-rect{fill:#2a201a;stroke:var(--close)}
+.node-g.working .node-rect{stroke:var(--working);stroke-width:2}
+.node-g.broken .node-rect{stroke:var(--broken);stroke-width:2}
+.node-g.inprog .node-rect{stroke:var(--inprog);stroke-width:2;stroke-dasharray:4,3}
+.node-num{font-family:var(--mono);font-size:9.5px;fill:var(--muted);letter-spacing:.2px}
+.node-title{font-family:var(--sans);font-size:12px;font-weight:600;fill:var(--ink)}
+.node-sub{font-family:var(--sans);font-size:10px;fill:var(--muted)}
+.node-status-dot{r:5}
+.node-status-dot.pending{fill:var(--pending)} .node-status-dot.inprog{fill:var(--inprog)}
+.node-status-dot.working{fill:var(--working)} .node-status-dot.broken{fill:var(--broken)}
+.node-presence{fill:#fff;font-size:9px;font-weight:600;text-anchor:middle}
+.node-presence-circle{r:8;stroke:var(--panel);stroke-width:2}
+
+.arrow{stroke:#3a4150;stroke-width:1.8;fill:none;marker-end:url(#arr)}
+.arrow.loop{stroke:var(--accent2);stroke-dasharray:6,3;marker-end:url(#arrl)}
+.arrow-label{font-family:var(--mono);font-size:9.5px;fill:var(--muted);font-weight:500}
+
+/* Detail */
+.detail{background:var(--panel);border-left:1px solid var(--line);padding:16px 20px 60px;
+        overflow-y:auto;position:sticky;top:62px;height:calc(100vh - 62px)}
+.detail-empty{color:var(--muted);text-align:center;padding:80px 20px;font-size:13px}
+.detail-empty svg{margin-bottom:14px;opacity:.4}
+.dhd{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:12px;
+     padding-bottom:12px;border-bottom:1px solid var(--line)}
+.did{font-family:var(--mono);font-size:11px;color:var(--accent2);letter-spacing:.3px;margin-bottom:3px}
+.dtitle{font-size:16px;font-weight:600;line-height:1.3}
+.dtype{padding:3px 9px;border-radius:14px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;flex-shrink:0}
+.dtype.setup{background:rgba(107,122,153,.2);color:var(--setup)}
+.dtype.main{background:rgba(79,140,255,.15);color:var(--main)}
+.dtype.wizard{background:rgba(167,139,250,.15);color:var(--wizard)}
+.dtype.prod{background:rgba(56,211,159,.15);color:var(--prod)}
+.dtype.close{background:rgba(245,165,36,.15);color:var(--close)}
+
+.dsec{margin:14px 0}
+.dsec-h{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.7px;font-weight:600;
+        margin-bottom:8px;display:flex;align-items:center;gap:8px}
+.dsec-h .count{background:var(--panel2);color:var(--muted);padding:1px 7px;border-radius:20px;font-size:10px;
+               font-family:var(--mono);text-transform:none;letter-spacing:0}
+.dsec-h .dot{width:8px;height:8px;border-radius:50%}
+.dsec-h .dot.h{background:var(--health)}
+.dsec-h .dot.b{background:var(--biz)}
+.dsec-h .dot.f{background:var(--frontend)}
+.desc{font-size:12.5px;color:#d0d5e0;line-height:1.6}
+.endpoint{background:var(--panel2);padding:5px 9px;border-radius:5px;font-family:var(--mono);
+          font-size:11px;color:#c9d2e0;border:1px solid var(--line);word-break:break-all;
+          display:inline-block;margin-right:4px;margin-bottom:4px}
+.endpoint .m{color:var(--accent2);font-weight:600;margin-right:5px}
+.action-list{list-style:none;padding:0;margin:0;font-size:12px;counter-reset:step}
+.action-list li{padding:5px 0 5px 28px;position:relative;color:#d0d5e0;line-height:1.5;counter-increment:step}
+.action-list li:before{content:counter(step);position:absolute;left:0;top:5px;width:19px;height:19px;
+                        background:var(--panel2);border:1px solid var(--line);border-radius:50%;
+                        text-align:center;font-size:10px;line-height:18px;color:var(--muted);font-family:var(--mono)}
+
+.check-list{list-style:none;padding:0;margin:0}
+.check-item{display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px dashed var(--line);
+             font-size:12px;color:#d8dde8;position:relative}
+.check-item:last-child{border-bottom:none}
+.check-item input{margin-top:3px;cursor:pointer;flex-shrink:0;width:16px;height:16px}
+.check-item.h input{accent-color:var(--health)}
+.check-item.b input{accent-color:var(--biz)}
+.check-item.f input{accent-color:var(--frontend)}
+.check-item .ctxt{flex:1;line-height:1.5}
+.check-item input:checked ~ .ctxt{color:var(--muted);text-decoration:line-through}
+.check-item .why{display:block;font-size:10.5px;color:var(--dim);margin-top:2px;font-style:italic}
+.check-item .by{position:absolute;right:0;top:8px;font-size:9.5px;color:var(--muted);font-family:var(--mono);
+                background:var(--panel2);padding:1px 6px;border-radius:8px;border:1px solid var(--line)}
+.check-item .just-changed{animation:flash 1.5s}
+@keyframes flash{0%,100%{background:transparent}30%{background:rgba(56,211,159,.15)}}
+
+.biz-section{background:linear-gradient(180deg,rgba(167,139,250,.05),transparent);
+             border:1px solid rgba(167,139,250,.2);border-radius:8px;padding:10px 14px;margin:14px 0}
+.frontend-section{background:linear-gradient(180deg,rgba(245,165,36,.05),transparent);
+                   border:1px solid rgba(245,165,36,.2);border-radius:8px;padding:10px 14px;margin:14px 0}
+.biz-section .dsec-h, .frontend-section .dsec-h{margin-bottom:6px;margin-top:0}
+.biz-section .desc, .frontend-section .desc{font-size:11.5px;color:var(--muted);margin-bottom:6px}
+
+.status-bar{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:5px;margin-top:12px}
+.status-bar button{padding:8px 4px;border:1px solid var(--line);background:var(--panel2);
+                   color:var(--muted);border-radius:6px;font-size:10.5px;cursor:pointer;font-weight:500}
+.status-bar button:hover{color:var(--ink)}
+.status-bar button.active.pending{background:var(--pending);color:#fff;border-color:var(--pending)}
+.status-bar button.active.inprog{background:var(--inprog);color:#fff;border-color:var(--inprog)}
+.status-bar button.active.working{background:var(--working);color:#0b0d12;border-color:var(--working)}
+.status-bar button.active.broken{background:var(--broken);color:#fff;border-color:var(--broken)}
+
+.notes{width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--ink);
+       padding:8px 10px;border-radius:6px;font-size:12px;font-family:var(--sans);resize:vertical;
+       min-height:52px;line-height:1.5}
+.notes:focus{outline:none;border-color:var(--accent)}
+
+.comments{margin-top:14px}
+.comments .list{max-height:200px;overflow-y:auto;background:var(--panel2);border:1px solid var(--line);
+                border-radius:6px;padding:8px}
+.comment{padding:6px 0;border-bottom:1px dashed var(--line);font-size:12px}
+.comment:last-child{border-bottom:none}
+.comment .who{font-weight:600;color:var(--accent2);font-size:11px;margin-right:6px}
+.comment .when{color:var(--dim);font-size:10px;font-family:var(--mono);float:right}
+.comment .txt{color:#d8dde8;margin-top:2px;line-height:1.4;word-break:break-word}
+.comment-input{display:flex;gap:6px;margin-top:8px}
+.comment-input input{flex:1;background:var(--panel2);border:1px solid var(--line);color:var(--ink);
+                      padding:7px 9px;border-radius:5px;font-size:12px;font-family:var(--sans)}
+.comment-input input:focus{outline:none;border-color:var(--accent)}
+.comment-input button{padding:6px 12px;background:var(--accent);border:none;color:#fff;border-radius:5px;
+                       cursor:pointer;font-size:11px;font-weight:500}
+.comment-input button:hover{background:#3d78e6}
+.comment-empty{color:var(--dim);font-size:11px;text-align:center;padding:12px 0}
+
+.summary-hint{background:linear-gradient(180deg,rgba(56,211,159,.05),transparent);
+              border:1px solid rgba(56,211,159,.2);border-radius:8px;padding:10px 12px;
+              margin-bottom:14px;font-size:11.5px;color:#c9d2e0;line-height:1.55}
+.summary-hint b{color:var(--accent2)}
+.mini-progress{display:flex;gap:6px;margin-top:6px;font-size:10.5px;font-family:var(--mono);flex-wrap:wrap}
+.mini-progress .mp{padding:2px 7px;border-radius:4px;background:var(--panel2);border:1px solid var(--line)}
+.mini-progress .mp .h{color:var(--health)}
+.mini-progress .mp .b{color:var(--biz)}
+.mini-progress .mp .f{color:var(--frontend)}
+
+@media (max-width:1200px){
+  .main-wrap{grid-template-columns:1fr}
+  .detail{position:relative;top:0;height:auto;border-left:none;border-top:1px solid var(--line)}
+}
+</style>
+</head>
+<body>
+
+<!-- Setup modal (first-time) -->
+<div class="modal-bg" id="setup-modal">
+  <div class="modal">
+    <h2>Team QA Setup</h2>
+    <p class="sub">One-time setup. Your name is required. Firebase config is optional (only needed for real-time team collaboration).</p>
+    <div class="tabs">
+      <button class="t active" onclick="showTab('quick')">Solo mode</button>
+      <button class="t" onclick="showTab('team')">Team real-time</button>
+    </div>
+    <div class="tab-body active" id="tab-quick">
+      <div class="field">
+        <label>Your name</label>
+        <input type="text" id="in-name" placeholder="e.g. Shubham" autocomplete="off">
+        <div class="hint">Your display name. Used to attribute checks and comments.</div>
+      </div>
+      <div class="setup-step">
+        <b>Solo mode:</b> All data saves in your browser (localStorage). No sharing with team. You can enable team mode later.
+      </div>
+    </div>
+    <div class="tab-body" id="tab-team">
+      <div class="field">
+        <label>Your name</label>
+        <input type="text" id="in-name-team" placeholder="e.g. Shubham" autocomplete="off">
+      </div>
+      <div class="field">
+        <label>Session key (all team members must use the same key)</label>
+        <input type="text" id="in-session" placeholder="e.g. binder-qa-nov-2025" autocomplete="off">
+        <div class="hint">A shared string that identifies your team's QA workspace. Everyone with the same key sees the same data.</div>
+      </div>
+      <div class="field">
+        <label>Firebase config (JSON)</label>
+        <textarea id="in-fbconfig" placeholder='{"apiKey":"...","authDomain":"...","databaseURL":"...","projectId":"..."}'></textarea>
+        <div class="hint">
+          Firebase Realtime Database config JSON. <a href="#" onclick="showFirebaseHelp();return false;">How to set up? (5 min guide)</a>
+        </div>
+      </div>
+      <div class="setup-step">
+        <b>Team mode:</b> All data syncs in real-time via Firebase. Team members see each other's changes instantly.
+      </div>
+    </div>
+    <div class="actions">
+      <button class="primary" onclick="saveSetup()">Start</button>
+    </div>
+  </div>
+</div>
+
+<!-- Firebase help modal -->
+<div class="modal-bg" id="fb-help-modal">
+  <div class="modal">
+    <h2>Firebase Setup (5 min)</h2>
+    <p class="sub">For real-time team collaboration. Requires a Google account. Free tier is generous.</p>
+    <div class="setup-step"><b>Step 1.</b> Go to <a href="https://console.firebase.google.com" target="_blank">console.firebase.google.com</a> and click "Add project". Give it any name (e.g. <code>binder-qa</code>).</div>
+    <div class="setup-step"><b>Step 2.</b> Left menu: <b>Build → Realtime Database</b> → "Create database" → pick nearest region → <b>Start in test mode</b>.</div>
+    <div class="setup-step"><b>Step 3.</b> Top left → Project Settings (gear icon) → General tab → "Your apps" → click <b>Web icon (&lt;/&gt;)</b> → set app nickname → Register.</div>
+    <div class="setup-step"><b>Step 4.</b> The config JSON will be shown. You need these 4 fields: <code>apiKey</code>, <code>authDomain</code>, <code>databaseURL</code>, <code>projectId</code>. Copy the JSON and paste it into the setup modal.</div>
+    <div class="setup-step"><b>Step 5.</b> Go to <b>Realtime Database → Rules</b> tab and paste this:
+      <pre>{
+  "rules": {
+    "sessions": {
+      "$sid": { ".read": true, ".write": true }
+    }
+  }
+}</pre>
+      Click Publish. Your session key acts as the security key.
+    </div>
+    <div class="setup-step"><b>Step 6.</b> <b>IMPORTANT:</b> Open this HTML file via an HTTP server (not <code>file://</code>). Some browsers block Firebase over the file protocol:
+      <pre>cd folder-with-html
+python -m http.server 8000</pre>
+      Then open <code>http://localhost:8000/BOM-PORTAL-TEAM-QA-V2.html</code>
+    </div>
+    <div class="actions">
+      <button class="primary" onclick="hideFbHelp()">Got it</button>
+    </div>
+  </div>
+</div>
+
+<!-- Share modal -->
+<div class="modal-bg" id="share-modal">
+  <div class="modal">
+    <h2>Share with team</h2>
+    <p class="sub">Send these three items to each team member so they can join the same session.</p>
+    <div class="field">
+      <label>1. This HTML file</label>
+      <div class="setup-step">Share this file itself (email / WhatsApp / shared drive).</div>
+    </div>
+    <div class="field">
+      <label>2. Session key</label>
+      <input type="text" id="share-session" readonly>
+      <div class="hint">Every team member must enter this exact key.</div>
+    </div>
+    <div class="field">
+      <label>3. Firebase config (only if team mode is enabled)</label>
+      <textarea id="share-fbconfig" readonly rows="4"></textarea>
+      <div class="hint">The same JSON that team members will paste in their setup modal.</div>
+    </div>
+    <div class="setup-step">
+      <b>How team members join:</b>
+      <br>1. Open the HTML file (recommended via HTTP server)
+      <br>2. Select the "Team real-time" tab in setup
+      <br>3. Enter name + session key + Firebase config → Start
+      <br>4. All checkbox and comment updates will sync in real-time
+    </div>
+    <div class="actions">
+      <button onclick="hideShare()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- GitHub Publish Info modal -->
+<div class="modal-bg" id="publish-modal">
+  <div class="modal">
+    <h2>Report downloaded!</h2>
+    <p class="sub">Your standalone HTML report is saved. Here is how to publish it so the team can view it in a browser.</p>
+
+    <div class="setup-step">
+      <b>Option 1: GitHub Pages (recommended)</b>
+      <br>1. In your GitHub repository, create a folder like <code>qa-reports/</code>
+      <br>2. Copy the downloaded HTML file into that folder
+      <br>3. Commit and push:
+      <pre>git add qa-reports/
+git commit -m "Add QA report"
+git push</pre>
+      4. Enable GitHub Pages: repo <b>Settings → Pages → Source: main branch → Save</b>
+      <br>5. Report URL becomes:
+      <pre>https://YOUR-USERNAME.github.io/YOUR-REPO/qa-reports/report-name.html</pre>
+      6. Share the URL with the team.
+    </div>
+
+    <div class="setup-step">
+      <b>Option 2: View directly on GitHub</b>
+      <br>Push the HTML file to any GitHub repo. Then wrap the raw URL with <code>htmlpreview.github.io</code>:
+      <pre>https://htmlpreview.github.io/?https://github.com/USER/REPO/blob/main/path/to/file.html</pre>
+      Simpler than GitHub Pages but slower to load.
+    </div>
+
+    <div class="setup-step">
+      <b>Option 3: Any static host</b>
+      <br>The report is one self-contained HTML file with zero dependencies. Drop it into Netlify, Vercel, Cloudflare Pages, Firebase Hosting, or any web server, and share the URL.
+    </div>
+
+    <div class="setup-step">
+      <b>What the report contains</b>
+      <br>Every module with its full status, every checkbox with who ticked it, every note, every team comment with timestamps, summary counts, testers list. Print-friendly. Zero interactivity, so nothing to break. Read-only.
+    </div>
+
+    <div class="actions">
+      <button class="primary" onclick="hidePublish()">Got it</button>
+    </div>
+  </div>
+</div>
+
+<!-- Complete Run modal -->
+<div class="modal-bg" id="complete-modal">
+  <div class="modal">
+    <h2>Complete this run</h2>
+    <p class="sub">Archive the current run to history and start a fresh run with everything reset. This action is shared with the team.</p>
+    <div id="complete-summary"></div>
+    <div class="field">
+      <label>Run label (optional)</label>
+      <input type="text" id="complete-label" placeholder="e.g. Sprint 42 regression / Nov release smoke / Bug batch 7">
+      <div class="hint">A short name for this run to find it later in history.</div>
+    </div>
+    <div class="field">
+      <label>Run summary notes (optional)</label>
+      <textarea id="complete-notes" placeholder="Overall summary of this run: what was tested, blockers, follow-ups..." style="font-family:var(--sans);font-size:13px;min-height:80px"></textarea>
+    </div>
+    <div class="setup-step">
+      <b>What happens on completion:</b>
+      <br>• Current run (all checks, notes, comments, statuses) is saved to history with today's date
+      <br>• All checks reset to unchecked
+      <br>• All notes and comments cleared
+      <br>• A new run starts immediately, with you as the initiator
+      <br>• You can view or export past runs anytime via the History button
+    </div>
+    <div class="actions">
+      <button onclick="hideComplete()">Cancel</button>
+      <button class="primary" onclick="completeRun()">Archive and start new run</button>
+    </div>
+  </div>
+</div>
+
+<!-- History modal -->
+<div class="modal-bg" id="history-modal">
+  <div class="modal wide">
+    <h2>Run history</h2>
+    <p class="sub">All completed QA runs for this session. Click any run to view its full details.</p>
+    <div class="run-list" id="history-list"></div>
+    <div class="actions">
+      <button onclick="hideHistory()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Run detail modal -->
+<div class="modal-bg" id="rundetail-modal">
+  <div class="modal wide">
+    <div id="rundetail-body"></div>
+    <div class="actions">
+      <button onclick="hideRunDetail()">Close</button>
+      <button onclick="exportCurrentViewedRun()">Export as Markdown</button>
+      <button class="primary" onclick="downloadHTMLReportOfViewedRun()">Download HTML Report</button>
+    </div>
+  </div>
+</div>
+
+<header>
+  <div>
+    <div class="htitle">Binder OS — Team QA <span id="session-name" style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px"></span></div>
+    <div class="hsub">Health + Business logic + Frontend UI checks · every run is archived to history</div>
+  </div>
+  <div class="hctrl">
+    <div class="run-info" id="run-info">Run: <b id="run-info-when">—</b></div>
+    <div class="fb-status" id="fb-status"><div class="dot"></div><span id="fb-status-text">Offline</span></div>
+    <div class="presence-list" id="presence-list"></div>
+    <div class="progress">
+      <div class="pbar"><div id="pbar-fill" style="width:0%"></div></div>
+      <div class="pcount" id="pcount">0 / 18 pass</div>
+    </div>
+    <button class="btn" onclick="showHistory()">History</button>
+    <button class="btn" onclick="showShare()">Share</button>
+    <button class="btn" onclick="showComplete()">Complete run</button>
+    <button class="btn" onclick="exportReport()">Export MD</button>
+    <button class="btn btn-success" onclick="generateReport()">Generate HTML Report</button>
+  </div>
+</header>
+
+<div class="main-wrap">
+  <div class="flow-area">
+    <div class="legend">
+      <div class="li"><span class="sq setup"></span>Setup</div>
+      <div class="li"><span class="sq main"></span>Order</div>
+      <div class="li"><span class="sq wizard"></span>Wizard</div>
+      <div class="li"><span class="sq prod"></span>Production</div>
+      <div class="li"><span class="sq close"></span>Close</div>
+      <div style="width:1px;height:14px;background:var(--line);margin:0 6px"></div>
+      <div class="li"><span class="st pending">Not tested</span></div>
+      <div class="li"><span class="st inprog">Partial</span></div>
+      <div class="li"><span class="st working">All pass</span></div>
+      <div class="li"><span class="st broken">Broken</span></div>
+    </div>
+    <svg class="flow" viewBox="0 0 1400 900" preserveAspectRatio="xMidYMid meet">
+      <defs>
+        <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#3a4150"/></marker>
+        <marker id="arrl" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#38d39f"/></marker>
+      </defs>
+      <text x="30" y="30" class="section-label">Setup modules</text>
+      <line x1="30" y1="150" x2="1370" y2="150" class="section-line"/>
+      <text x="30" y="175" class="section-label">Order flow · IPC Wizard (5 steps)</text>
+      <line x1="30" y1="490" x2="1370" y2="490" class="section-line"/>
+      <text x="30" y="515" class="section-label">Production · Shipment · Close</text>
+      <g id="arrows"></g>
+      <g id="nodes"></g>
+    </svg>
+  </div>
+  <aside class="detail" id="detail">
+    <div class="detail-empty">
+      <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <circle cx="12" cy="12" r="9"/><path d="M9 12l2 2 4-4"/>
+      </svg>
+      <div>Click any module to start checking.</div>
+      <div>Health + Business + Frontend — all three.</div>
+    </div>
+  </aside>
+</div>
+
+<script>
+// ============================================================================
+// STAGES DATA
+// ============================================================================
+const STAGES = [
+  { id:'auth', num:'01', title:'Login', sub:'OTP auth', type:'setup', x:60, y:60,
+    desc:'OTP-based login. Email to OTP to JWT to dashboard.',
+    endpoints:[['POST','/api/auth/request-otp/'],['POST','/api/auth/verify-otp/']],
+    actions:['Open app URL','Enter email','Click Send OTP','Enter received OTP','Click Verify'],
+    health:['Login page loads without console errors','OTP request returns success (200)','Correct OTP verifies and returns JWT','Dashboard renders after successful login'],
+    business:[
+      ['Wrong OTP shows clean error, no crash','UX regression guard'],
+      ['JWT persists across page refresh','Session survives reload'],
+      ['Role-based redirect: admin, manager, tenant each land on correct dashboard','Router logic correctness'],
+      ['Logout clears token and blocks protected routes','No stale session security hole']
+    ],
+    frontend:['Autofocus on email input on page load','Enter key submits the form','Submit button shows loading state during API call','Error message visible on failure (not silent)','Email field validates format inline before submit']
+  },
+  { id:'onboarding', num:'02', title:'Onboarding', sub:'4-step setup', type:'setup', x:260, y:60,
+    desc:'First-time company setup wizard: profile, company identity, factory units, document config.',
+    endpoints:[['GET','/api/auth/me/onboarding/'],['PUT','/api/auth/me/onboarding/update/']],
+    actions:['Login with fresh user (onboarding pending)','Complete Step 1 profile','Save Step 2 company identity','Save Step 3 factory units + sheds','Save Step 4 document config'],
+    health:['Onboarding page opens for new user','Each of the 4 steps loads its form','Save on each step returns 200','After Step 4 user lands on the main dashboard'],
+    business:[
+      ['User cannot navigate to other modules until onboarding is complete','Access gating enforced'],
+      ['GST format validated on Step 2 (invalid values rejected)','Company identity trustworthy'],
+      ['Step 3 blocks save when no factory unit is added','Minimum data enforced'],
+      ['Only Step 4 flips onboarding_completed = true','Do not mark complete prematurely'],
+      ['If interrupted, onboarding resumes from the saved step','User progress preserved']
+    ],
+    frontend:['Progress indicator shows current step (1 of 4, 2 of 4, etc.)','Back button allows returning to previous step','Save and Continue buttons are clearly labeled','Required fields visibly marked (asterisk or label)','Field validation errors shown inline (not only on submit)','Cannot proceed to next step until current step is valid']
+  },
+  { id:'buyer', num:'03', title:'Buyer', sub:'Customer master', type:'setup', x:460, y:60,
+    desc:'Buyer / customer master module.',
+    endpoints:[['GET','/api/buyers/'],['POST','/api/buyers/']],
+    actions:['Menu: Buyers','Click Add Buyer','Fill name, address, contact person, retailer','Save'],
+    health:['Buyer list opens','Add Buyer form opens','Save creates the buyer','New buyer appears in the list'],
+    business:[
+      ['Required 4 fields block save when blank (name, address, contact, retailer)','No half-baked buyers in DB'],
+      ['Buyer visible only within own tenant (no cross-tenant leak)','Tenant isolation intact'],
+      ['New buyer available in PO creation dropdown','Buyer-PO link works end-to-end']
+    ],
+    frontend:['Buyer list has a search / filter input','List is paginated when 20 or more buyers exist','Add form shows validation errors inline below each field','Cancel button returns to list without saving','Long buyer name does not break the list row layout','Sort by name and by date works']
+  },
+  { id:'vendor', num:'04', title:'Vendor', sub:'Supplier master', type:'setup', x:660, y:60,
+    desc:'Vendor / supplier master with strict format validation on GST, IFSC, WhatsApp, email.',
+    endpoints:[['GET','/api/vendors/'],['POST','/api/vendors/']],
+    actions:['Menu: Vendors','Click Add Vendor','Fill name, address, GST, IFSC, WhatsApp, bank info','Save'],
+    health:['Vendor list opens','Add Vendor form opens','Save creates the vendor','New vendor appears in the list'],
+    business:[
+      ['GST format enforced (invalid format rejected)','GST reports downstream depend on this'],
+      ['IFSC format enforced (4 letters + 0 + 6 chars)','Bank routing must be valid'],
+      ['WhatsApp cleaned (dashes/spaces stripped) and validated as 10 digits','Contactability guaranteed'],
+      ['Cross-tenant vendor UUID does not resolve','Tenant isolation on procurement']
+    ],
+    frontend:['GST field shows format hint below (e.g. 22AAAAA0000A1Z5)','IFSC field shows format hint','WhatsApp field accepts dashes/spaces and auto-cleans','Invalid format shows error inline on blur','Field max length matches DB constraint','Save button disabled until all required fields are valid']
+  },
+  { id:'po', num:'05', title:'Purchase Order', sub:'Customer PO', type:'main', x:60, y:210,
+    desc:'PO creation module. Wraps IPCs under one customer order.',
+    endpoints:[['GET','/api/purchase-orders/'],['POST','/api/purchase-orders/']],
+    actions:['Menu: PO / Orders','Click Create PO','Enter name, select buyer','Pick order type','Save'],
+    health:['PO list opens','Create PO form opens','Save creates the PO','PO appears in list and is clickable to detail'],
+    business:[
+      ['Production order saves with blank companyType','Standard flow works'],
+      ['Company order requires SAM or STOCK (blocked when blank)','Classification enforced'],
+      ['Buyer dropdown shows only current tenant buyers','No cross-tenant buyer leak']
+    ],
+    frontend:['Buyer dropdown is searchable (typeahead)','Order type toggle switches company type field visibility','PO name field has a helpful placeholder','Date fields use a proper date picker','List supports filter by status (Open / Closed)']
+  },
+  { id:'ipc-new', num:'06', title:'IPC Create', sub:'New Factory Code', type:'main', x:260, y:210,
+    desc:'Start a new IPC (Factory Code) under a PO. Opens the 5-step wizard.',
+    endpoints:[['POST','/api/factory-codes/']],
+    actions:['Open a PO from list','Click Add IPC','Enter IPC code','Continue: wizard opens on Step 1'],
+    health:['Add IPC button visible on PO detail','IPC identity form opens','Wizard advances to Step 1'],
+    business:[
+      ['Same (PO + IPC code) reopens the existing IPC; does NOT create a duplicate row','CRITICAL: guards against IPC 7-copy accumulation bug'],
+      ['Cross-tenant IPC id in URL returns 404','Tenant isolation on IPC read'],
+      ['Draft state preserved if user leaves and returns','No data loss on interrupt']
+    ],
+    frontend:['IPC code field shows uniqueness check inline (before submit)','Duplicate code shows a warning that says it will reopen existing','Cancel returns to PO detail without creating','Breadcrumb shows PO to IPC hierarchy']
+  },
+  { id:'w1-sku', num:'07', title:'Wizard Step 1', sub:'SKU + Component', type:'wizard', x:460, y:210,
+    desc:'Step 1: add SKUs and components. Set PO quantity and overage.',
+    endpoints:[['POST','/api/factory-code-sections/']],
+    actions:['Step 1 opens','Add SKU','Add components under the SKU','Enter PO qty and overage percent','Save / Next'],
+    health:['Step 1 UI renders','Add SKU and Add Component both work','Fields accept input (name, placement, qty)','Save advances to Step 2'],
+    business:[
+      ['Minimum 1 SKU and 1 component required before save','IPC minimum enforced'],
+      ['Deleting a component cascades to its BOM, WO, and Artwork rows','No orphan rows in DB'],
+      ['Renaming a component preserves BOM and artwork links (linked by component_id)','Component ID is the key'],
+      ['Placement (TOP / BOTTOM) is saved and read back correctly','Downstream WO uses placement context']
+    ],
+    frontend:['Step indicator clearly shows 1 of 5','Add SKU button visible even when 0 SKUs exist (empty state)','Delete component asks for confirmation','Unsaved changes warning if user tries to navigate away','Numeric fields (qty, overage) reject non-numeric input','Component list scrolls when many components']
+  },
+  { id:'w2-bom', num:'08', title:'Wizard Step 2', sub:'BOM + Work Orders', type:'wizard', x:660, y:210,
+    desc:'Step 2: per component, pick material type and fill fields. Add work orders. This step has the heaviest business logic.',
+    endpoints:[['POST','/api/factory-code-sections/']],
+    actions:['Step 2 opens with Step 1 components','Pick Material Type per component','Fill fabric or yarn fields','Add Work Order and pick process type','Fill WO-specific fields','Save / Next'],
+    health:['Step 2 UI renders with components from Step 1','Material Type dropdown works','Material-specific fields appear on selection','Work Order add works','Save advances to Step 3'],
+    business:[
+      ['Fabric cascade: Cotton + percale auto-fills constructionType (woven-plain-weave) + weaveKnit (1x1 Plain)','CORE: cascade is the heart of BOM'],
+      ['Changing fiber Cotton to Silk resets fabricName to first valid (no orphan percale)','Prevents invalid combinations'],
+      ['Yarn cascade: Cotton Combed auto-fills 5 fields (composition, countRange, spin, ply, wind)','CORE: yarn cascade'],
+      ['Bad approval value ("0" or unknown) on ONE row does NOT 400 the whole IPC (coerced to null)','CRITICAL: silent IPC loss prevention'],
+      ['Blank sizeUnit is dropped, not rejected as 400','CRITICAL: lenient choice safety'],
+      ['All 17 Work Order process types selectable in dropdown','Full coverage: WEAVING, KNITTING, DYEING, TUFTING, CUTTING, SEWING, and more'],
+      ['WEAVING process type shows reed / pick / warp / weft fields','Process cascade works']
+    ],
+    frontend:['Fabric name dropdown updates immediately when fiber changes','Cascaded fields (construction, weave) visually indicated as auto-filled','User can override auto-filled cascade values manually','Material Type change prompts confirmation before wiping fields','Testing requirements is a multi-select (chips or tags UI)','Long remarks field is a textarea that expands as needed']
+  },
+  { id:'w3-trim', num:'09', title:'Wizard Step 3', sub:'Consumption / Trim', type:'wizard', x:860, y:210,
+    desc:'Step 3: add trims and accessories from 30 category types.',
+    endpoints:[['POST','/api/consumption-materials/']],
+    actions:['Step 3 opens','Click Add Trim','Pick category','Fill category-specific sub-fields','Save / Next'],
+    health:['Step 3 UI renders','Add Trim button works','Category dropdown populates with all values','Sub-fields appear per selected category','Save advances to Step 4'],
+    business:[
+      ['All 30 trim categories are in the dropdown','Complete coverage'],
+      ['Category-specific sub-fields load correctly (ZIPPERS shows zipNumber, etc.)','Category cascade works'],
+      ['Bad approval value on one trim does NOT 400 the whole IPC','CRITICAL: lenient choice safety'],
+      ['Multiple trims of the same category on one component are allowed','No false deduplication']
+    ],
+    frontend:['Trim rows are collapsible (accordion) when many exist','Category dropdown is searchable (typeahead for 30 items)','Sub-field section clearly grouped and labeled','Delete trim row asks for confirmation','Copy trim row button (duplicate with new ID) if supported']
+  },
+  { id:'w4-art', num:'10', title:'Wizard Step 4', sub:'Artwork', type:'wizard', x:1060, y:210,
+    desc:'Step 4: add labels, tags, and artwork rows from 18 categories including HEADER CARD.',
+    endpoints:[['POST','/api/artwork-materials/']],
+    actions:['Step 4 opens','Click Add Artwork','Pick category (or type a custom one)','Fill fields, set qty','Save / Next'],
+    health:['Step 4 UI renders','Add Artwork button works','Category dropdown works','Save advances to Step 5'],
+    business:[
+      ['All 18 artwork categories in dropdown INCLUDING HEADER CARD','REGRESSION: HEADER CARD used to 400 the whole IPC'],
+      ['Unknown category typed manually is accepted (CharField, not strict enum)','Extra safety net for typed values'],
+      ['Category to TYPE cascade filters the TYPE dropdown correctly','Correct TYPE options per category']
+    ],
+    frontend:['Category field allows both dropdown selection and typing (combo box)','TYPE options refresh when category changes','Size unit selector (MM / CM / INCHES) clearly labeled','File upload (design ref) shows the selected filename after choosing']
+  },
+  { id:'w5-pack', num:'11', title:'Wizard Step 5', sub:'Packaging', type:'wizard', x:1260, y:210,
+    desc:'Step 5: packaging spec, casepack qty, and packaging materials.',
+    endpoints:[['POST','/api/packaging-materials/']],
+    actions:['Step 5 opens','Fill carton spec and casepack qty','Pick shipping mode (Merged / Standalone)','Add packaging materials','Save'],
+    health:['Step 5 UI renders','Casepack and carton fields work','Packaging material list can be added to','Save works'],
+    business:[
+      ['All 13 current packaging material types offered','Standard coverage'],
+      ['Legacy values also accepted (CARTONS/CORRUGATED BOX, POLYBAG, etc.)','Backward compatibility for historical rows'],
+      ['Merged and Standalone shipping modes both save','Both flows work']
+    ],
+    frontend:['Casepack qty must be a positive integer (0 or negative rejected)','Shipping mode is a clear radio button (Merged vs Standalone)','Scenario dropdown clearly labeled','Materials list scrolls when many items exist','Total cartons calculation shown live (poQty divided by casepackQty)']
+  },
+  { id:'save-ipc', num:'12', title:'Save IPC', sub:'Final commit', type:'main', x:1260, y:390,
+    desc:'Final submit of the whole IPC. This is where the biggest data-integrity rules live.',
+    endpoints:[['POST','/api/factory-codes/']],
+    actions:['Review the wizard summary','Click Submit / Save IPC','Wait for success confirmation','Open the IPC detail'],
+    health:['Submit button visible','Save returns 201','IPC appears in the IPC list','Detail page shows all 5 sections'],
+    business:[
+      ['Exactly 1 row in factory_codes per (tenant, PO, IPC code) triple','CRITICAL: guards against duplicate IPC rows'],
+      ['Exactly 4 rows in factory_code_sections (bomwo, artwork, cutsew, packaging)','Section upsert works'],
+      ['Rerun with same PO+IPC code UPDATES the same row (does not create new)','CRITICAL: upsert path'],
+      ['Double-click on Submit creates only 1 IPC (idempotent)','Prevents accidental duplicates'],
+      ['Reload IPC detail restores all fields exactly as saved','Round-trip fidelity']
+    ],
+    frontend:['Confirmation modal appears before final submit','Success animation or clear success toast is shown','Auto-redirect to IPC detail after save','Submit button disabled during API call (prevents double-click)','Loading spinner visible during save','Errors from any step are shown with a jump-back link to that step']
+  },
+  { id:'vpo', num:'13', title:'VPO', sub:'Vendor PO', type:'main', x:1060, y:390,
+    desc:'Vendor Purchase Order to buy materials for the IPC.',
+    endpoints:[['POST','/api/vpo/'],['POST','/api/vpo/<id>/issue/']],
+    actions:['Menu: Purchase','Create VPO','Select IPC materials','Pick vendor and quantity','Save and Issue'],
+    health:['VPO create page opens','IPC material selection works','Vendor dropdown works','Save and Issue both complete','VPO appears in the VPO list'],
+    business:[
+      ['VPOLine.source_id set to the RM UUID','Purchase Balance calculation depends on this'],
+      ['Purchase Balance = ordered qty minus issued qty (correct math)','CORE calculation'],
+      ['If IPC is edited after VPO (matchable material), Balance still shows the buy','CRITICAL: VPO does not strand after edit'],
+      ['Cross-tenant vendor UUID is rejected','Tenant isolation on procurement']
+    ],
+    frontend:['Material multi-select shows only IPC materials (filtered)','Vendor dropdown is searchable','Qty field validates positive number','Rate and GST auto-calculate line total','Issue button visually distinct from Save (2-step process visible)']
+  },
+  { id:'inward', num:'14', title:'Inward', sub:'Receive materials', type:'main', x:860, y:390,
+    desc:'Record received materials against an issued VPO.',
+    endpoints:[['POST','/api/inward/']],
+    actions:['Menu: Inward','Click Create Inward','Select the issued VPO','Enter received quantity','Save'],
+    health:['Inward page opens','VPO selection dropdown works','Save completes','Received qty visible on stock'],
+    business:[
+      ['Partial receipt allowed (multiple inwards can fulfill one VPO line)','Real-world quantities rarely arrive at once'],
+      ['Stock reflects inward atomically','No double-count and no missing count'],
+      ['Rate and GST captured on inward for costing','Costing math needs these values']
+    ],
+    frontend:['VPO dropdown is filtered to Issued status only','Received qty cannot exceed ordered qty (inline validation)','Date picker for received date','Challan or invoice number field is required','Total value auto-calculates from qty times rate plus GST']
+  },
+  { id:'stock', num:'15', title:'Stock Sheet', sub:'Available inventory', type:'main', x:660, y:390,
+    desc:'Aggregated stock view across all received materials.',
+    endpoints:[['GET','/api/stock/']],
+    actions:['Menu: Stock Sheet','View materials and balances'],
+    health:['Stock page loads','Materials from inward appear','Balance column shows numbers (not blank or error)'],
+    business:[
+      ['Formula: Inward received minus Outward issued minus Production issued = Available','CORE stock math'],
+      ['Tenant-scoped only (only own materials visible)','Tenant isolation on inventory']
+    ],
+    frontend:['Search and filter by material name works','Sort by balance (ascending / descending)','Low-stock rows visually highlighted (color coded)','Export button (CSV or PDF)','Refresh button to pull latest data']
+  },
+  { id:'production', num:'16', title:'Production', sub:'Cut / Sew / Finish', type:'prod', x:660, y:620,
+    desc:'Part-3 wizard for actual manufacturing: cutting, sewing, finishing.',
+    endpoints:[['POST','/api/factory-code-sections/']],
+    actions:['Open IPC detail','Enter Part-3 / Production wizard','Fill Cutting section and save','Fill Sewing section and save','Fill Finishing section and save'],
+    health:['Part-3 wizard opens from IPC detail','Cutting section loads','Sewing section loads','Finishing section loads','Save works independently per section'],
+    business:[
+      ['cutMachine to cutType cascade filters options (SCISSOR vs LASER show different types)','Correct cut type per machine'],
+      ['Material issue reduces stock atomically','Stock math integrity'],
+      ['Data persists on reload of Part-3','No silent data loss']
+    ],
+    frontend:['Section tabs (Cut / Sew / Finish) clearly labeled','Save button visible per section','Section completion indicator (checkmark on tab)','Dimension inputs (L / W / H) accept only numeric input','Finishing processes multi-select with clear UI']
+  },
+  { id:'outward', num:'17', title:'Outward', sub:'Dispatch shipment', type:'prod', x:460, y:620,
+    desc:'Record shipment dispatch. Reduces stock.',
+    endpoints:[['POST','/api/outward/']],
+    actions:['Menu: Outward','Click Create','Select IPC and enter dispatch details','Save'],
+    health:['Outward page opens','Create form loads','Save completes','Stock reduces after save'],
+    business:[
+      ['Outward qty cannot exceed available stock (blocked at save)','No negative stock allowed'],
+      ['Stock reduces atomically at save','No race conditions and no double-dispatch'],
+      ['Outward references source IPC, PO, and component','Traceability preserved']
+    ],
+    frontend:['IPC selection shows only shippable IPCs','Qty field validates against available stock (live check)','Courier or docket number field present','Dispatch date defaults to today (still editable)','Confirmation prompt before final dispatch']
+  },
+  { id:'close', num:'18', title:'PO Close', sub:'Order complete', type:'close', x:260, y:620,
+    desc:'Close PO after all IPCs are shipped. Loops to the next PO for the next order cycle.',
+    endpoints:[['PUT','/api/purchase-orders/<id>/close/']],
+    actions:['Open PO detail','Click Close PO','Confirm'],
+    health:['Close PO button visible on PO detail','Confirmation dialog completes','PO status changes to Closed','Closed PO is still viewable'],
+    business:[
+      ['Close is blocked if any IPC has pending outwards','Prevents premature close'],
+      ['Closed PO does NOT allow new IPC creation','Order lifecycle enforced'],
+      ['Closed PO history is readable (never hard-deleted)','Audit trail preserved']
+    ],
+    frontend:['Close button clearly labeled and not near delete','Confirmation modal explains what closing means','Optional reason field for close action','Closed PO detail shows a visually locked / read-only state','Filter option to show closed POs in the list']
+  }
+];
+const ARROWS=[['auth','onboarding'],['onboarding','buyer'],['buyer','vendor'],['po','ipc-new'],['ipc-new','w1-sku'],['w1-sku','w2-bom'],['w2-bom','w3-trim'],['w3-trim','w4-art'],['w4-art','w5-pack'],['w5-pack','save-ipc'],['save-ipc','vpo'],['vpo','inward'],['inward','stock'],['stock','production'],['production','outward'],['outward','close']];
+const CYCLE_LOOP=['close','po','next order'];
+
+// ============================================================================
+// STATE
+// ============================================================================
+const STORAGE_KEY = 'binder-team-qa-v2';
+let state = {
+  selected: null, userName: '', userId: '', userColor: '#4f8cff',
+  sessionId: 'default', fbConfig: null,
+  // Current active run
+  currentRun: {
+    startedAt: null, startedBy: null, testers: [],
+    statuses: {}, notes: {}, checks: {}, comments: {}
+  },
+  // Presence (transient, not part of run)
+  presence: {},
+  // History cache (loaded on demand)
+  historyCache: null,
+  viewingRun: null
+};
+
+let db=null, sessionRef=null, myPresenceRef=null;
+let firebaseConnected=false;
+let recentlyChangedByRemote={};
+
+function loadLocal(){
+  try{
+    const s=localStorage.getItem(STORAGE_KEY);
+    if(s){
+      const parsed=JSON.parse(s);
+      // Preserve user identity + session, load current run
+      state.userName=parsed.userName||'';
+      state.userId=parsed.userId||'';
+      state.userColor=parsed.userColor||'#4f8cff';
+      state.sessionId=parsed.sessionId||'default';
+      state.fbConfig=parsed.fbConfig||null;
+      state.selected=parsed.selected||null;
+      if(parsed.currentRun){ state.currentRun=parsed.currentRun; }
+    }
+  }catch(e){}
+}
+function saveLocal(){
+  try{
+    localStorage.setItem(STORAGE_KEY,JSON.stringify({
+      userName:state.userName, userId:state.userId, userColor:state.userColor,
+      sessionId:state.sessionId, fbConfig:state.fbConfig, selected:state.selected,
+      currentRun:state.currentRun
+    }));
+  }catch(e){}
+}
+
+function genUserId(){ return 'u_'+Math.random().toString(36).slice(2,10); }
+function genRunId(){ return 'r_'+Date.now()+'_'+Math.random().toString(36).slice(2,6); }
+function colorFromName(name){
+  const colors=['#4f8cff','#38d39f','#a78bfa','#f5a524','#ff6b6b','#22d3ee','#f472b6','#fb923c','#84cc16'];
+  let hash=0; for(let i=0;i<name.length;i++) hash=((hash<<5)-hash)+name.charCodeAt(i);
+  return colors[Math.abs(hash)%colors.length];
+}
+
+function ensureRunStarted(){
+  if(!state.currentRun.startedAt){
+    state.currentRun.startedAt = Date.now();
+    state.currentRun.startedBy = state.userName || state.userId;
+    state.currentRun.testers = [state.userName || state.userId];
+    saveLocal();
+    if(sessionRef){
+      sessionRef.child('current/meta').set({
+        startedAt: state.currentRun.startedAt,
+        startedBy: state.currentRun.startedBy,
+        testers: state.currentRun.testers
+      });
+    }
+  }
+}
+
+function addTester(){
+  const name = state.userName || state.userId;
+  if(!state.currentRun.testers) state.currentRun.testers = [];
+  if(state.currentRun.testers.indexOf(name) < 0){
+    state.currentRun.testers.push(name);
+    saveLocal();
+    if(sessionRef){
+      sessionRef.child('current/meta/testers').set(state.currentRun.testers);
+    }
+  }
+}
+
+// ============================================================================
+// FIREBASE
+// ============================================================================
+function initFirebase(){
+  if(!state.fbConfig) return;
+  try{
+    firebase.initializeApp(state.fbConfig);
+    db=firebase.database();
+    sessionRef=db.ref('sessions/'+state.sessionId);
+
+    sessionRef.child('current/checks').on('value',function(snap){
+      const remote=snap.val()||{};
+      // detect changes for flash effect
+      Object.keys(remote).forEach(function(sid){
+        const sc=remote[sid]||{};
+        ['health','business','frontend'].forEach(function(area){
+          const areaState=sc[area]||{};
+          Object.keys(areaState).forEach(function(idx){
+            const val=areaState[idx];
+            if(typeof val==='object' && val && 'v' in val){
+              const localVal=((state.currentRun.checks[sid]||{})[area]||{})[idx];
+              const localBool=typeof localVal==='object' ? localVal.v : localVal;
+              if(localBool!==val.v){
+                recentlyChangedByRemote[sid+':'+area+':'+idx]=Date.now();
+              }
+            }
+          });
+        });
+      });
+      state.currentRun.checks=remote;
+      saveLocal(); renderNodes(); renderDetail(); updateProgress();
+    });
+
+    sessionRef.child('current/statuses').on('value',function(snap){
+      state.currentRun.statuses=snap.val()||{};
+      saveLocal(); renderNodes(); updateProgress();
+    });
+    sessionRef.child('current/notes').on('value',function(snap){
+      state.currentRun.notes=snap.val()||{};
+      saveLocal(); if(state.selected) renderDetail();
+    });
+    sessionRef.child('current/comments').on('value',function(snap){
+      state.currentRun.comments=snap.val()||{};
+      saveLocal(); if(state.selected) renderDetail();
+    });
+    sessionRef.child('current/meta').on('value',function(snap){
+      const meta=snap.val();
+      if(meta){
+        state.currentRun.startedAt=meta.startedAt||state.currentRun.startedAt;
+        state.currentRun.startedBy=meta.startedBy||state.currentRun.startedBy;
+        state.currentRun.testers=meta.testers||state.currentRun.testers;
+        saveLocal(); renderRunInfo();
+      }
+    });
+    sessionRef.child('presence').on('value',function(snap){
+      state.presence=snap.val()||{};
+      renderPresence(); renderNodes();
+    });
+
+    // Load history (on demand only)
+
+    myPresenceRef=sessionRef.child('presence/'+state.userId);
+    myPresenceRef.set({
+      name:state.userName, color:state.userColor, selected:state.selected,
+      lastSeen:firebase.database.ServerValue.TIMESTAMP
+    });
+    myPresenceRef.onDisconnect().remove();
+
+    db.ref('.info/connected').on('value',function(snap){
+      firebaseConnected=snap.val()===true;
+      renderFbStatus();
+      if(firebaseConnected && myPresenceRef){
+        myPresenceRef.update({
+          name:state.userName, color:state.userColor, selected:state.selected,
+          lastSeen:firebase.database.ServerValue.TIMESTAMP
+        });
+        myPresenceRef.onDisconnect().remove();
+      }
+    });
+
+  }catch(e){
+    console.error('Firebase init failed:',e);
+    firebaseConnected=false; renderFbStatus();
+    alert('Firebase setup failed: '+e.message+'\n\nTool will run in localStorage mode.');
+  }
+}
+
+// ============================================================================
+// PUSH TO FIREBASE + LOCAL
+// ============================================================================
+function pushCheck(stageId,area,idx,val){
+  ensureRunStarted(); addTester();
+  const payload={v:val, by:state.userName||state.userId, at:Date.now()};
+  if(!state.currentRun.checks[stageId]) state.currentRun.checks[stageId]={};
+  if(!state.currentRun.checks[stageId][area]) state.currentRun.checks[stageId][area]={};
+  state.currentRun.checks[stageId][area][idx]=payload;
+  saveLocal();
+  if(sessionRef) sessionRef.child('current/checks/'+stageId+'/'+area+'/'+idx).set(payload);
+}
+
+function pushStatus(stageId,status){
+  ensureRunStarted(); addTester();
+  state.currentRun.statuses[stageId]=status;
+  saveLocal();
+  if(sessionRef) sessionRef.child('current/statuses/'+stageId).set(status);
+}
+
+function pushNote(stageId,text){
+  ensureRunStarted(); addTester();
+  state.currentRun.notes[stageId]=text;
+  saveLocal();
+  if(sessionRef) sessionRef.child('current/notes/'+stageId).set(text);
+}
+
+function pushComment(stageId,text){
+  ensureRunStarted(); addTester();
+  const c={who:state.userName||state.userId, color:state.userColor, txt:text, when:Date.now()};
+  if(!state.currentRun.comments[stageId]) state.currentRun.comments[stageId]={};
+  const key='c_'+Date.now()+'_'+Math.random().toString(36).slice(2,6);
+  state.currentRun.comments[stageId][key]=c;
+  saveLocal();
+  if(sessionRef) sessionRef.child('current/comments/'+stageId+'/'+key).set(c);
+}
+
+function pushSelected(stageId){
+  state.selected=stageId;
+  saveLocal();
+  if(myPresenceRef) myPresenceRef.update({selected:stageId, lastSeen:firebase.database.ServerValue.TIMESTAMP});
+}
+
+// ============================================================================
+// HELPERS
+// ============================================================================
+function getCheckValue(stageId,area,idx){
+  const sc=state.currentRun.checks[stageId]||{};
+  const ac=sc[area]||{};
+  const v=ac[idx];
+  if(v==null) return {v:false, by:null};
+  if(typeof v==='object') return v;
+  return {v:!!v, by:null};
+}
+function nodeStatus(id){ return state.currentRun.statuses[id]||'pending'; }
+function ensureChecks(stageId){
+  if(!state.currentRun.checks[stageId]) state.currentRun.checks[stageId]={};
+  if(!state.currentRun.checks[stageId].health) state.currentRun.checks[stageId].health={};
+  if(!state.currentRun.checks[stageId].business) state.currentRun.checks[stageId].business={};
+  if(!state.currentRun.checks[stageId].frontend) state.currentRun.checks[stageId].frontend={};
+  return state.currentRun.checks[stageId];
+}
+function stageProgress(stage){
+  ensureChecks(stage.id);
+  const hT=(stage.health||[]).length, bT=(stage.business||[]).length, fT=(stage.frontend||[]).length;
+  const hD=(stage.health||[]).filter(function(_,i){return getCheckValue(stage.id,'health',i).v;}).length;
+  const bD=(stage.business||[]).filter(function(_,i){return getCheckValue(stage.id,'business',i).v;}).length;
+  const fD=(stage.frontend||[]).filter(function(_,i){return getCheckValue(stage.id,'frontend',i).v;}).length;
+  return {hDone:hD, hTotal:hT, bDone:bD, bTotal:bT, fDone:fD, fTotal:fT, done:hD+bD+fD, total:hT+bT+fT};
+}
+function escapeHtml(s){ if(s==null) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function timeAgo(ts){
+  const sec=Math.floor((Date.now()-ts)/1000);
+  if(sec<5) return 'just now';
+  if(sec<60) return sec+'s ago';
+  if(sec<3600) return Math.floor(sec/60)+'m ago';
+  if(sec<86400) return Math.floor(sec/3600)+'h ago';
+  return Math.floor(sec/86400)+'d ago';
+}
+function fmtDateTime(ts){
+  const d=new Date(ts);
+  return d.toISOString().slice(0,16).replace('T',' ');
+}
+function fmtDate(ts){ return new Date(ts).toISOString().slice(0,10); }
+function fmtDuration(ms){
+  const s=Math.floor(ms/1000);
+  if(s<60) return s+'s';
+  if(s<3600) return Math.floor(s/60)+'m';
+  if(s<86400) return Math.floor(s/3600)+'h '+Math.floor((s%3600)/60)+'m';
+  return Math.floor(s/86400)+'d '+Math.floor((s%86400)/3600)+'h';
+}
+
+// ============================================================================
+// RENDER
+// ============================================================================
+function renderFbStatus(){
+  const el=document.getElementById('fb-status');
+  const txt=document.getElementById('fb-status-text');
+  if(!state.fbConfig){ el.className='fb-status offline'; txt.textContent='Solo mode'; }
+  else if(firebaseConnected){ el.className='fb-status connected'; txt.textContent='Live sync'; }
+  else { el.className='fb-status offline'; txt.textContent='Connecting...'; }
+  document.getElementById('session-name').textContent=state.sessionId!=='default'?'#'+state.sessionId:'';
+}
+function renderRunInfo(){
+  const el=document.getElementById('run-info-when');
+  if(state.currentRun.startedAt){
+    el.textContent='Started '+timeAgo(state.currentRun.startedAt);
+  } else {
+    el.textContent='Not started';
+  }
+}
+function renderPresence(){
+  const el=document.getElementById('presence-list');
+  const users=state.presence||{};
+  const list=[];
+  if(state.userName) list.push({id:state.userId, name:state.userName, color:state.userColor, isMe:true});
+  Object.keys(users).forEach(function(uid){
+    if(uid===state.userId) return;
+    const u=users[uid];
+    if(u) list.push({id:uid, name:u.name||uid, color:u.color||'#666', isMe:false, selected:u.selected});
+  });
+  el.innerHTML=list.map(function(u){
+    const initial=(u.name||'?').charAt(0).toUpperCase();
+    return '<div class="p-user '+(u.isMe?'me':'')+'" style="background:'+u.color+'">'+
+           initial+
+           '<div class="p-tip">'+escapeHtml(u.name)+(u.isMe?' (you)':'')+(u.selected?' - viewing '+u.selected:'')+'</div>'+
+           '</div>';
+  }).join('')||'<span style="font-size:11px;color:var(--muted);padding:0 8px">no one online</span>';
+}
+function renderNodes(){
+  const g=document.getElementById('nodes');
+  g.innerHTML='';
+  STAGES.forEach(function(s){
+    const st=nodeStatus(s.id);
+    const w=170,h=68;
+    const active=state.selected===s.id?'active':'';
+    const grp=document.createElementNS('http://www.w3.org/2000/svg','g');
+    grp.setAttribute('class','node-g '+s.type+' '+st+' '+active);
+    grp.setAttribute('transform','translate('+s.x+','+s.y+')');
+    const viewers=Object.keys(state.presence||{}).filter(function(uid){
+      const u=state.presence[uid];
+      return u && u.selected===s.id && uid!==state.userId;
+    });
+    let presenceHtml='';
+    viewers.slice(0,2).forEach(function(uid,i){
+      const u=state.presence[uid];
+      const initial=(u.name||'?').charAt(0).toUpperCase();
+      presenceHtml+='<circle class="node-presence-circle" cx="'+(w-14-i*14)+'" cy="'+(h-14)+'" fill="'+(u.color||'#666')+'"/>'+
+                    '<text class="node-presence" x="'+(w-14-i*14)+'" y="'+(h-11)+'">'+initial+'</text>';
+    });
+    grp.innerHTML=
+      '<rect class="node-rect" width="'+w+'" height="'+h+'"/>'+
+      '<text class="node-num" x="10" y="16">'+s.num+'</text>'+
+      '<circle class="node-status-dot '+st+'" cx="'+(w-14)+'" cy="14"/>'+
+      '<text class="node-title" x="10" y="36">'+s.title+'</text>'+
+      '<text class="node-sub" x="10" y="54">'+s.sub+'</text>'+
+      presenceHtml;
+    grp.addEventListener('click',function(){selectStage(s.id);});
+    g.appendChild(grp);
+  });
+}
+function nodeCenter(id,side){
+  const s=STAGES.find(function(x){return x.id===id;}); if(!s) return null;
+  const w=170,h=68;
+  if(side==='right') return {x:s.x+w,y:s.y+h/2};
+  if(side==='left') return {x:s.x,y:s.y+h/2};
+  if(side==='top') return {x:s.x+w/2,y:s.y};
+  if(side==='bottom') return {x:s.x+w/2,y:s.y+h};
+  return {x:s.x+w/2,y:s.y+h/2};
+}
+function autoSides(from,to){
+  const a=STAGES.find(function(x){return x.id===from;}),b=STAGES.find(function(x){return x.id===to;});
+  const dx=b.x-a.x,dy=b.y-a.y;
+  if(Math.abs(dy)<30) return dx>0?['right','left']:['left','right'];
+  if(Math.abs(dx)<30) return dy>0?['bottom','top']:['top','bottom'];
+  if(Math.abs(dx)>Math.abs(dy)) return dx>0?['right','left']:['left','right'];
+  return dy>0?['bottom','top']:['top','bottom'];
+}
+function pathBetween(a,b,sa,sb){
+  if(sa==='right'&&sb==='left'&&Math.abs(a.y-b.y)<20) return 'M'+a.x+','+a.y+' L'+b.x+','+b.y;
+  if(sa==='bottom'&&sb==='top'&&Math.abs(a.x-b.x)<20) return 'M'+a.x+','+a.y+' L'+b.x+','+b.y;
+  const midX=(a.x+b.x)/2,midY=(a.y+b.y)/2;
+  if(sa==='right'||sa==='left') return 'M'+a.x+','+a.y+' L'+midX+','+a.y+' L'+midX+','+b.y+' L'+b.x+','+b.y;
+  return 'M'+a.x+','+a.y+' L'+a.x+','+midY+' L'+b.x+','+midY+' L'+b.x+','+b.y;
+}
+function renderArrows(){
+  const g=document.getElementById('arrows');
+  g.innerHTML='';
+  ARROWS.forEach(function(pair){
+    const sides=autoSides(pair[0],pair[1]);
+    const a=nodeCenter(pair[0],sides[0]),b=nodeCenter(pair[1],sides[1]);
+    if(!a||!b) return;
+    const el=document.createElementNS('http://www.w3.org/2000/svg','path');
+    el.setAttribute('class','arrow');
+    el.setAttribute('d',pathBetween(a,b,sides[0],sides[1]));
+    g.appendChild(el);
+  });
+  const start=nodeCenter(CYCLE_LOOP[0],'left');
+  const end=nodeCenter(CYCLE_LOOP[1],'left');
+  const path='M'+start.x+','+start.y+' L'+(start.x-30)+','+start.y+' L'+(start.x-30)+','+end.y+' L'+end.x+','+end.y;
+  const el=document.createElementNS('http://www.w3.org/2000/svg','path');
+  el.setAttribute('class','arrow loop');
+  el.setAttribute('d',path);
+  g.appendChild(el);
+  const t=document.createElementNS('http://www.w3.org/2000/svg','text');
+  t.setAttribute('class','arrow-label');
+  t.setAttribute('fill','#38d39f');
+  t.setAttribute('x',start.x-38);
+  t.setAttribute('y',(start.y+end.y)/2);
+  t.setAttribute('text-anchor','middle');
+  t.setAttribute('transform','rotate(-90 '+(start.x-38)+' '+((start.y+end.y)/2)+')');
+  t.textContent='loop: '+CYCLE_LOOP[2];
+  g.appendChild(t);
+}
+function renderDetail(){
+  const detail=document.getElementById('detail');
+  if(!state.selected){
+    detail.innerHTML='<div class="detail-empty">'+
+      '<svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">'+
+      '<circle cx="12" cy="12" r="9"/><path d="M9 12l2 2 4-4"/></svg>'+
+      '<div>Click any module to start checking.</div>'+
+      '<div>Health + Business + Frontend — all three.</div></div>';
+    return;
+  }
+  const s=STAGES.find(function(x){return x.id===state.selected;});
+  if(!s) return;
+  const st=nodeStatus(s.id);
+  ensureChecks(s.id);
+  const note=state.currentRun.notes[s.id]||'';
+  const prog=stageProgress(s);
+  let endpointsHtml='';
+  (s.endpoints||[]).forEach(function(e){
+    endpointsHtml+='<div class="endpoint"><span class="m">'+e[0]+'</span>'+escapeHtml(e[1])+'</div>';
+  });
+  let actionsHtml='';
+  (s.actions||[]).forEach(function(a){actionsHtml+='<li>'+escapeHtml(a)+'</li>';});
+  function checksHtml(area,list){
+    let html='';
+    (list||[]).forEach(function(item,i){
+      const cv=getCheckValue(s.id,area,i);
+      const text=Array.isArray(item)?item[0]:item;
+      const why=Array.isArray(item)?item[1]:'';
+      const flashKey=s.id+':'+area+':'+i;
+      const justChanged=recentlyChangedByRemote[flashKey] && (Date.now()-recentlyChangedByRemote[flashKey]<3000);
+      const byLabel=cv.by && cv.by!==state.userName ? '<span class="by">by '+escapeHtml(cv.by)+'</span>':'';
+      html+='<li class="check-item '+area.charAt(0)+' '+(justChanged?'just-changed':'')+'">'+
+        '<input type="checkbox" '+(cv.v?'checked':'')+' onchange="toggleCheck(&quot;'+s.id+'&quot;,&quot;'+area+'&quot;,'+i+',this.checked)">'+
+        '<span class="ctxt">'+escapeHtml(text)+(why?'<span class="why">Why: '+escapeHtml(why)+'</span>':'')+'</span>'+
+        byLabel+'</li>';
+    });
+    return html;
+  }
+  const commentsObj=state.currentRun.comments[s.id]||{};
+  const commentsList=Object.keys(commentsObj).map(function(k){return commentsObj[k];}).sort(function(a,b){return a.when-b.when;});
+  let commentsHtml='';
+  if(commentsList.length){
+    commentsHtml=commentsList.map(function(c){
+      return '<div class="comment">'+
+             '<span class="who" style="color:'+(c.color||'var(--accent2)')+'">'+escapeHtml(c.who)+'</span>'+
+             '<span class="when">'+timeAgo(c.when)+'</span>'+
+             '<div class="txt">'+escapeHtml(c.txt)+'</div></div>';
+    }).join('');
+  } else {
+    commentsHtml='<div class="comment-empty">No comments yet. Team members can discuss issues here.</div>';
+  }
+  detail.innerHTML=
+    '<div class="dhd">'+
+      '<div><div class="did">MODULE '+s.num+'</div>'+
+      '<div class="dtitle">'+escapeHtml(s.title)+'</div>'+
+      '<div style="font-size:12px;color:var(--muted);margin-top:3px">'+escapeHtml(s.sub)+'</div></div>'+
+      '<span class="dtype '+s.type+'">'+s.type+'</span></div>'+
+    '<div class="summary-hint">Three check categories: <b>Health</b> (module works) + <b>Business logic</b> (backend rules) + <b>Frontend UI</b> (UX + validation).'+
+      '<div class="mini-progress">'+
+        '<div class="mp"><span class="h">H</span> '+prog.hDone+'/'+prog.hTotal+'</div>'+
+        '<div class="mp"><span class="b">B</span> '+prog.bDone+'/'+prog.bTotal+'</div>'+
+        '<div class="mp"><span class="f">F</span> '+prog.fDone+'/'+prog.fTotal+'</div>'+
+      '</div></div>'+
+    '<div class="dsec"><div class="dsec-h">What this module does</div><div class="desc">'+escapeHtml(s.desc)+'</div></div>'+
+    (endpointsHtml?'<div class="dsec"><div class="dsec-h">API endpoints</div>'+endpointsHtml+'</div>':'')+
+    (actionsHtml?'<div class="dsec"><div class="dsec-h">Steps to test</div><ul class="action-list">'+actionsHtml+'</ul></div>':'')+
+    '<div class="dsec"><div class="dsec-h"><span class="dot h"></span>Health check <span class="count">'+prog.hDone+' / '+prog.hTotal+'</span></div><ul class="check-list">'+checksHtml('health',s.health)+'</ul></div>'+
+    '<div class="biz-section"><div class="dsec-h"><span class="dot b"></span>Backend business logic <span class="count">'+prog.bDone+' / '+prog.bTotal+'</span></div>'+
+      '<div class="desc">Core backend rules from serializers.py and models.py.</div>'+
+      '<ul class="check-list">'+checksHtml('business',s.business)+'</ul></div>'+
+    '<div class="frontend-section"><div class="dsec-h"><span class="dot f"></span>Frontend UI and UX <span class="count">'+prog.fDone+' / '+prog.fTotal+'</span></div>'+
+      '<div class="desc">User-facing UI checks: validation, loading, keyboard, responsive.</div>'+
+      '<ul class="check-list">'+checksHtml('frontend',s.frontend)+'</ul></div>'+
+    '<div class="dsec"><div class="dsec-h">Overall module status</div>'+
+      '<div class="status-bar">'+
+        '<button class="'+(st==='pending'?'active pending':'')+'" onclick="setStatus(&quot;'+s.id+'&quot;,&quot;pending&quot;)">Not tested</button>'+
+        '<button class="'+(st==='inprog'?'active inprog':'')+'" onclick="setStatus(&quot;'+s.id+'&quot;,&quot;inprog&quot;)">Partial</button>'+
+        '<button class="'+(st==='working'?'active working':'')+'" onclick="setStatus(&quot;'+s.id+'&quot;,&quot;working&quot;)">All pass</button>'+
+        '<button class="'+(st==='broken'?'active broken':'')+'" onclick="setStatus(&quot;'+s.id+'&quot;,&quot;broken&quot;)">Broken</button>'+
+      '</div></div>'+
+    '<div class="dsec"><div class="dsec-h">Notes for this module</div>'+
+      '<textarea class="notes" placeholder="What did not work, screenshot ref, bug number..." oninput="setNote(&quot;'+s.id+'&quot;,this.value)">'+escapeHtml(note)+'</textarea></div>'+
+    '<div class="comments">'+
+      '<div class="dsec-h">Team discussion <span class="count">'+commentsList.length+'</span></div>'+
+      '<div class="list">'+commentsHtml+'</div>'+
+      '<div class="comment-input">'+
+        '<input type="text" id="comment-input" placeholder="Add a comment for the team..." onkeydown="if(event.key===&quot;Enter&quot;) postComment()">'+
+        '<button onclick="postComment()">Post</button></div></div>';
+}
+
+// ============================================================================
+// ACTIONS
+// ============================================================================
+function selectStage(id){
+  pushSelected(id); ensureChecks(id);
+  renderNodes(); renderDetail();
+}
+function toggleCheck(stageId,area,idx,checked){
+  pushCheck(stageId,area,idx,checked);
+  const s=STAGES.find(function(x){return x.id===stageId;});
+  const prog=stageProgress(s);
+  const cur=nodeStatus(stageId);
+  if(prog.done===prog.total && prog.total>0 && cur!=='broken'){ pushStatus(stageId,'working'); }
+  else if(prog.done>0 && (cur==='pending'||cur==='working')){ pushStatus(stageId,'inprog'); }
+  else if(prog.done===0 && cur==='inprog'){ pushStatus(stageId,'pending'); }
+  renderNodes(); renderDetail(); updateProgress();
+}
+function setStatus(stageId,status){
+  pushStatus(stageId,status);
+  renderNodes(); renderDetail(); updateProgress();
+}
+function setNote(stageId,v){ pushNote(stageId,v); }
+function postComment(){
+  const input=document.getElementById('comment-input');
+  const txt=(input.value||'').trim();
+  if(!txt||!state.selected) return;
+  pushComment(state.selected,txt);
+  input.value=''; renderDetail();
+}
+function updateProgress(){
+  const total=STAGES.length;
+  const working=STAGES.filter(function(s){return nodeStatus(s.id)==='working';}).length;
+  document.getElementById('pcount').textContent=working+' / '+total+' pass';
+  document.getElementById('pbar-fill').style.width=((working/total)*100)+'%';
+}
+
+// ============================================================================
+// COMPLETE RUN + HISTORY
+// ============================================================================
+function completeRun(){
+  ensureRunStarted();
+  const label=(document.getElementById('complete-label').value||'').trim();
+  const summary=(document.getElementById('complete-notes').value||'').trim();
+
+  // Build snapshot
+  const snapshot={
+    startedAt: state.currentRun.startedAt,
+    completedAt: Date.now(),
+    startedBy: state.currentRun.startedBy,
+    completedBy: state.userName||state.userId,
+    testers: state.currentRun.testers||[],
+    label: label,
+    summary: summary,
+    statuses: JSON.parse(JSON.stringify(state.currentRun.statuses||{})),
+    notes: JSON.parse(JSON.stringify(state.currentRun.notes||{})),
+    checks: JSON.parse(JSON.stringify(state.currentRun.checks||{})),
+    comments: JSON.parse(JSON.stringify(state.currentRun.comments||{}))
+  };
+  // Compute counts
+  let pass=0, broken=0, partial=0, pending=0;
+  STAGES.forEach(function(s){
+    const st=snapshot.statuses[s.id]||'pending';
+    if(st==='working') pass++;
+    else if(st==='broken') broken++;
+    else if(st==='inprog') partial++;
+    else pending++;
+  });
+  snapshot.counts={pass, broken, partial, pending, total:STAGES.length};
+
+  const runId=genRunId();
+
+  // Push to Firebase or save locally
+  if(sessionRef){
+    sessionRef.child('history/'+runId).set(snapshot,function(err){
+      if(err){
+        alert('Failed to save run to history: '+err.message);
+        return;
+      }
+      // Clear current
+      sessionRef.child('current').remove(function(err2){
+        if(err2){ alert('Warning: current run was archived but reset failed. '+err2.message); }
+        _resetCurrentLocally();
+      });
+    });
+  } else {
+    // Solo mode: save in localStorage
+    let localHistory=[];
+    try {
+      const s=localStorage.getItem('binder-team-qa-history');
+      if(s) localHistory=JSON.parse(s);
+    } catch(e){}
+    localHistory.unshift({id:runId, ...snapshot});
+    try { localStorage.setItem('binder-team-qa-history', JSON.stringify(localHistory)); } catch(e){}
+    _resetCurrentLocally();
+  }
+}
+
+function _resetCurrentLocally(){
+  state.currentRun={
+    startedAt: null, startedBy: null, testers: [],
+    statuses:{}, notes:{}, checks:{}, comments:{}
+  };
+  state.selected=null;
+  saveLocal();
+  hideComplete();
+  renderNodes(); renderDetail(); renderRunInfo(); updateProgress();
+  alert('Run archived to history. A new run will start automatically when you begin checking again.');
+}
+
+function loadHistory(callback){
+  if(sessionRef){
+    sessionRef.child('history').once('value', function(snap){
+      const val=snap.val()||{};
+      const arr=Object.keys(val).map(function(k){ return Object.assign({id:k}, val[k]); });
+      arr.sort(function(a,b){ return (b.completedAt||0) - (a.completedAt||0); });
+      callback(arr);
+    });
+  } else {
+    try {
+      const s=localStorage.getItem('binder-team-qa-history');
+      const arr=s?JSON.parse(s):[];
+      callback(arr);
+    } catch(e){ callback([]); }
+  }
+}
+
+function renderHistory(){
+  const list=document.getElementById('history-list');
+  list.innerHTML='<div class="run-empty">Loading history...</div>';
+  loadHistory(function(runs){
+    if(!runs || !runs.length){
+      list.innerHTML='<div class="run-empty">No completed runs yet. Start checking modules and click "Complete run" when done to archive your first run here.</div>';
+      return;
+    }
+    list.innerHTML=runs.map(function(r){
+      const counts=r.counts||{pass:0,broken:0,partial:0,pending:STAGES.length};
+      const durMs=(r.completedAt||0) - (r.startedAt||r.completedAt||0);
+      const testers=(r.testers||[]).slice(0,5).map(escapeHtml).join(', ')+((r.testers||[]).length>5?' +'+((r.testers||[]).length-5)+' more':'');
+      const label=r.label?escapeHtml(r.label):'(untitled run)';
+      return '<div class="run-item" onclick="viewRun(&quot;'+r.id+'&quot;)">'+
+        '<div class="rh">'+
+          '<div>'+
+            '<div class="rname">'+label+'</div>'+
+            '<div class="rmeta">'+fmtDateTime(r.completedAt||Date.now())+' · duration '+fmtDuration(durMs)+'</div>'+
+          '</div>'+
+          '<div class="rcounts">'+
+            '<span class="rcount pass">'+counts.pass+' pass</span>'+
+            (counts.broken>0?'<span class="rcount broken">'+counts.broken+' broken</span>':'')+
+            (counts.partial>0?'<span class="rcount partial">'+counts.partial+' partial</span>':'')+
+            (counts.pending>0?'<span class="rcount pending">'+counts.pending+' pending</span>':'')+
+          '</div>'+
+        '</div>'+
+        '<div class="rtesters">Testers: '+(testers||'(no attributed testers)')+'</div>'+
+        (r.summary?'<div style="margin-top:6px;font-size:11.5px;color:var(--muted);font-style:italic">'+escapeHtml(r.summary.slice(0,140))+(r.summary.length>140?'...':'')+'</div>':'')+
+        '</div>';
+    }).join('');
+  });
+}
+
+function viewRun(runId){
+  loadHistory(function(runs){
+    const r=runs.find(function(x){return x.id===runId;});
+    if(!r){ alert('Run not found'); return; }
+    state.viewingRun=r;
+    renderRunDetail(r);
+    hideHistory();
+    document.getElementById('rundetail-modal').classList.add('show');
+  });
+}
+
+function renderRunDetail(r){
+  const body=document.getElementById('rundetail-body');
+  const counts=r.counts||{pass:0,broken:0,partial:0,pending:STAGES.length};
+  const durMs=(r.completedAt||0)-(r.startedAt||r.completedAt||0);
+  const testers=(r.testers||[]).map(escapeHtml).join(', ')||'(none recorded)';
+
+  let modulesHtml='';
+  STAGES.forEach(function(s){
+    const st=(r.statuses||{})[s.id]||'pending';
+    const badge=st==='working'?'PASS':st==='broken'?'BROKEN':st==='inprog'?'PARTIAL':'NOT TESTED';
+    const note=(r.notes||{})[s.id]||'';
+    const comments=(r.comments||{})[s.id]||{};
+    const cList=Object.keys(comments).map(function(k){return comments[k];}).sort(function(a,b){return a.when-b.when;});
+    let chkGroupsHtml='';
+    ['health','business','frontend'].forEach(function(area){
+      const list=s[area]||[];
+      if(!list.length) return;
+      const label=area==='health'?'Health':area==='business'?'Business logic':'Frontend UI';
+      let itemsHtml='';
+      list.forEach(function(item,i){
+        const text=Array.isArray(item)?item[0]:item;
+        const cv=((r.checks||{})[s.id]||{})[area]||{};
+        const v=cv[i];
+        const done=typeof v==='object'?v.v:!!v;
+        const by=(typeof v==='object' && v.by)?' <span class="cby">by '+escapeHtml(v.by)+'</span>':'';
+        itemsHtml+='<div class="rd-chk '+(done?'done':'')+'">'+(done?'[x] ':'[ ] ')+escapeHtml(text)+by+'</div>';
+      });
+      chkGroupsHtml+='<div class="rd-chk-group"><h5>'+label+'</h5>'+itemsHtml+'</div>';
+    });
+    let commentsHtml='';
+    if(cList.length){
+      commentsHtml='<div class="rd-comments"><h5 style="margin:8px 0 4px;font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:600">Comments</h5>';
+      cList.forEach(function(c){
+        commentsHtml+='<div class="rd-com"><span class="cw">'+escapeHtml(c.who)+'</span>'+escapeHtml(c.txt)+'<span class="cd">'+fmtDateTime(c.when)+'</span></div>';
+      });
+      commentsHtml+='</div>';
+    }
+    const notesHtml=note?'<div class="rd-notes">Notes: '+escapeHtml(note)+'</div>':'';
+    modulesHtml+='<div class="rd-mod">'+
+      '<div class="rd-mh">'+
+        '<div><div class="rd-mtitle">'+s.num+' - '+escapeHtml(s.title)+'</div>'+
+        '<div class="rd-msub">'+escapeHtml(s.sub)+'</div></div>'+
+        '<span class="rd-status '+st+'">'+badge+'</span>'+
+      '</div>'+
+      chkGroupsHtml+notesHtml+commentsHtml+
+    '</div>';
+  });
+
+  body.innerHTML=
+    '<div class="rd-header">'+
+      '<h3>'+(r.label?escapeHtml(r.label):'(untitled run)')+'</h3>'+
+      '<div class="rd-meta">Started '+fmtDateTime(r.startedAt||0)+' by '+escapeHtml(r.startedBy||'?')+' · '+
+      'Completed '+fmtDateTime(r.completedAt||0)+' by '+escapeHtml(r.completedBy||'?')+' · '+
+      'Duration '+fmtDuration(durMs)+'</div>'+
+    '</div>'+
+    '<div class="rd-summary">'+
+      '<div class="box pass"><div class="n">'+counts.pass+'</div><div class="l">Pass</div></div>'+
+      '<div class="box broken"><div class="n">'+counts.broken+'</div><div class="l">Broken</div></div>'+
+      '<div class="box partial"><div class="n">'+counts.partial+'</div><div class="l">Partial</div></div>'+
+      '<div class="box pending"><div class="n">'+counts.pending+'</div><div class="l">Not tested</div></div>'+
+    '</div>'+
+    '<div style="font-size:12px;color:var(--muted);margin-bottom:6px"><b>Testers:</b> '+testers+'</div>'+
+    (r.summary?'<div style="background:var(--panel2);padding:8px 12px;border-radius:6px;font-size:12.5px;line-height:1.5;color:#d0d5e0;margin:8px 0"><b>Summary:</b> '+escapeHtml(r.summary)+'</div>':'')+
+    modulesHtml;
+}
+
+function exportCurrentViewedRun(){
+  if(!state.viewingRun) return;
+  const r=state.viewingRun;
+  const lines=['# Binder OS - QA Run Report',''];
+  lines.push('**Run:** '+(r.label||'(untitled)'));
+  lines.push('**Session:** '+state.sessionId);
+  lines.push('**Started:** '+fmtDateTime(r.startedAt||0)+' by '+(r.startedBy||'?'));
+  lines.push('**Completed:** '+fmtDateTime(r.completedAt||0)+' by '+(r.completedBy||'?'));
+  lines.push('**Duration:** '+fmtDuration((r.completedAt||0)-(r.startedAt||0)));
+  lines.push('**Testers:** '+(r.testers||[]).join(', '));
+  lines.push('');
+  const c=r.counts||{pass:0,broken:0,partial:0,pending:STAGES.length};
+  lines.push('**Summary:** '+c.pass+' pass / '+c.broken+' broken / '+c.partial+' partial / '+c.pending+' not tested (of '+STAGES.length+')');
+  lines.push('');
+  if(r.summary){ lines.push('## Summary notes'); lines.push(r.summary); lines.push(''); }
+  if(c.broken>0){
+    lines.push('## Broken modules');
+    STAGES.forEach(function(s){
+      const st=(r.statuses||{})[s.id];
+      if(st==='broken'){
+        lines.push('- **'+s.num+' '+s.title+'**'+((r.notes||{})[s.id]?' - '+(r.notes||{})[s.id]:''));
+      }
+    });
+    lines.push('');
+  }
+  STAGES.forEach(function(s){
+    const st=(r.statuses||{})[s.id]||'pending';
+    const badge=st==='working'?'PASS':st==='broken'?'BROKEN':st==='inprog'?'PARTIAL':'NOT TESTED';
+    lines.push('');
+    lines.push('### '+s.num+' - '+s.title+'  ['+badge+']');
+    lines.push('*'+s.sub+'*');
+    ['health','business','frontend'].forEach(function(area){
+      const list=s[area]||[];
+      if(!list.length) return;
+      const label=area==='health'?'Health':area==='business'?'Business logic':'Frontend UI';
+      lines.push('');
+      lines.push('**'+label+':**');
+      list.forEach(function(item,i){
+        const text=Array.isArray(item)?item[0]:item;
+        const cv=((r.checks||{})[s.id]||{})[area]||{};
+        const v=cv[i];
+        const done=typeof v==='object'?v.v:!!v;
+        const by=(typeof v==='object' && v.by)?' _(by '+v.by+')_':'';
+        lines.push('- ['+(done?'x':' ')+'] '+text+by);
+      });
+    });
+    const note=(r.notes||{})[s.id];
+    if(note){ lines.push(''); lines.push('**Notes:** '+note); }
+    const cmts=(r.comments||{})[s.id]||{};
+    const cList=Object.keys(cmts).map(function(k){return cmts[k];}).sort(function(a,b){return a.when-b.when;});
+    if(cList.length){
+      lines.push(''); lines.push('**Team comments:**');
+      cList.forEach(function(c){
+        lines.push('- **'+c.who+'** ('+fmtDateTime(c.when)+'): '+c.txt);
+      });
+    }
+  });
+  const blob=new Blob([lines.join('\n')],{type:'text/markdown'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;
+  const safeLabel=(r.label||'run').replace(/[^a-z0-9_-]/gi,'-').slice(0,40);
+  a.download='binder-run-'+safeLabel+'-'+fmtDate(r.completedAt||Date.now())+'.md';
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
+
+// ============================================================================
+// EXPORT CURRENT (not yet completed) RUN
+// ============================================================================
+function exportReport(){
+  const lines=['# Binder OS - Current Run Snapshot (not yet completed)',''];
+  lines.push('**Session:** '+state.sessionId);
+  lines.push('**Generated:** '+new Date().toISOString());
+  lines.push('**Generated by:** '+(state.userName||'anonymous'));
+  if(state.currentRun.startedAt){
+    lines.push('**Run started:** '+fmtDateTime(state.currentRun.startedAt)+' by '+(state.currentRun.startedBy||'?'));
+    lines.push('**Testers so far:** '+(state.currentRun.testers||[]).join(', '));
+  }
+  lines.push('');
+  const c={pass:0,broken:0,partial:0,pending:0};
+  STAGES.forEach(function(s){
+    const st=nodeStatus(s.id);
+    if(st==='working') c.pass++;
+    else if(st==='broken') c.broken++;
+    else if(st==='inprog') c.partial++;
+    else c.pending++;
+  });
+  lines.push('**Summary:** '+c.pass+' pass / '+c.broken+' broken / '+c.partial+' partial / '+c.pending+' not tested');
+  lines.push('');
+  if(c.broken>0){
+    lines.push('## Broken modules');
+    STAGES.forEach(function(s){
+      if(nodeStatus(s.id)==='broken'){
+        lines.push('- **'+s.num+' '+s.title+'**'+(state.currentRun.notes[s.id]?' - '+state.currentRun.notes[s.id]:''));
+      }
+    });
+    lines.push('');
+  }
+  STAGES.forEach(function(s){
+    const st=nodeStatus(s.id);
+    const badge=st==='working'?'PASS':st==='broken'?'BROKEN':st==='inprog'?'PARTIAL':'NOT TESTED';
+    const prog=stageProgress(s);
+    lines.push('');
+    lines.push('### '+s.num+' - '+s.title+'  ['+badge+']');
+    lines.push('*'+s.sub+'* · H '+prog.hDone+'/'+prog.hTotal+' · B '+prog.bDone+'/'+prog.bTotal+' · F '+prog.fDone+'/'+prog.fTotal);
+    ['health','business','frontend'].forEach(function(area){
+      const list=s[area]||[];
+      if(!list.length) return;
+      const label=area==='health'?'Health':area==='business'?'Business logic':'Frontend UI';
+      lines.push(''); lines.push('**'+label+':**');
+      list.forEach(function(item,i){
+        const text=Array.isArray(item)?item[0]:item;
+        const cv=getCheckValue(s.id,area,i);
+        const by=cv.by?' _(by '+cv.by+')_':'';
+        lines.push('- ['+(cv.v?'x':' ')+'] '+text+by);
+      });
+    });
+    const note=state.currentRun.notes[s.id];
+    if(note){ lines.push(''); lines.push('**Notes:** '+note); }
+    const cmts=state.currentRun.comments[s.id]||{};
+    const cList=Object.keys(cmts).map(function(k){return cmts[k];}).sort(function(a,b){return a.when-b.when;});
+    if(cList.length){
+      lines.push(''); lines.push('**Team comments:**');
+      cList.forEach(function(c){ lines.push('- **'+c.who+'**: '+c.txt); });
+    }
+  });
+  const blob=new Blob([lines.join('\n')],{type:'text/markdown'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;
+  a.download='binder-current-run-'+fmtDate(Date.now())+'.md';
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
+
+// ============================================================================
+// HTML REPORT GENERATOR (standalone, publishable to GitHub Pages)
+// ============================================================================
+
+function _buildRunFromCurrent(){
+  const c={pass:0,broken:0,partial:0,pending:0};
+  STAGES.forEach(function(s){
+    const st=nodeStatus(s.id);
+    if(st==='working') c.pass++;
+    else if(st==='broken') c.broken++;
+    else if(st==='inprog') c.partial++;
+    else c.pending++;
+  });
+  c.total=STAGES.length;
+  return {
+    label: 'Current run (in progress)',
+    startedAt: state.currentRun.startedAt||Date.now(),
+    completedAt: null,
+    startedBy: state.currentRun.startedBy||state.userName||'?',
+    completedBy: state.userName||'?',
+    testers: state.currentRun.testers||[state.userName||'?'],
+    summary: '',
+    statuses: state.currentRun.statuses||{},
+    notes: state.currentRun.notes||{},
+    checks: state.currentRun.checks||{},
+    comments: state.currentRun.comments||{},
+    counts: c,
+    isInProgress: true
+  };
+}
+
+function generateReport(){
+  // Generate HTML report for current run
+  const run = _buildRunFromCurrent();
+  const html = buildStandaloneHTMLReport(run);
+  const safeLabel='current-run';
+  downloadHTML(html, 'binder-qa-'+safeLabel+'-'+fmtDate(Date.now())+'.html');
+  showPublish();
+}
+
+function downloadHTMLReportOfViewedRun(){
+  if(!state.viewingRun) return;
+  const html = buildStandaloneHTMLReport(state.viewingRun);
+  const safeLabel=(state.viewingRun.label||'run').replace(/[^a-z0-9_-]/gi,'-').slice(0,40);
+  downloadHTML(html, 'binder-qa-'+safeLabel+'-'+fmtDate(state.viewingRun.completedAt||Date.now())+'.html');
+  showPublish();
+}
+
+function downloadHTML(html, filename){
+  const blob=new Blob([html],{type:'text/html'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url; a.download=filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function _esc(s){
+  if(s==null) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function buildStandaloneHTMLReport(run){
+  const c = run.counts || {pass:0,broken:0,partial:0,pending:STAGES.length,total:STAGES.length};
+  const durMs = run.completedAt ? (run.completedAt - (run.startedAt||run.completedAt)) : (Date.now() - (run.startedAt||Date.now()));
+  const title = 'Binder OS QA Report - ' + (run.label || (run.isInProgress ? 'Current run' : 'Untitled run'));
+  const dateStr = fmtDate(run.completedAt || Date.now());
+  const passPct = Math.round((c.pass/(c.total||1))*100);
+
+  // Broken modules for the top warning band
+  const brokenList = STAGES.filter(function(s){ return (run.statuses||{})[s.id]==='broken'; });
+
+  let modulesHtml='';
+  STAGES.forEach(function(s){
+    const st = (run.statuses||{})[s.id] || 'pending';
+    const badgeText = st==='working'?'PASS':st==='broken'?'BROKEN':st==='inprog'?'PARTIAL':'NOT TESTED';
+    const note = (run.notes||{})[s.id] || '';
+    const cmts = (run.comments||{})[s.id] || {};
+    const cList = Object.keys(cmts).map(function(k){return cmts[k];}).sort(function(a,b){return a.when-b.when;});
+
+    let chkHtml='';
+    ['health','business','frontend'].forEach(function(area){
+      const list=s[area]||[];
+      if(!list.length) return;
+      const label = area==='health'?'Health':area==='business'?'Business logic':'Frontend UI';
+      const colorClass = area==='health'?'a-h':area==='business'?'a-b':'a-f';
+      const done = list.filter(function(_,i){
+        const cv = ((run.checks||{})[s.id]||{})[area]||{};
+        const v = cv[i];
+        return typeof v==='object' ? v.v : !!v;
+      }).length;
+      let items='';
+      list.forEach(function(item,i){
+        const text = Array.isArray(item)?item[0]:item;
+        const why = Array.isArray(item)?item[1]:'';
+        const cv = ((run.checks||{})[s.id]||{})[area]||{};
+        const v = cv[i];
+        const isDone = typeof v==='object' ? v.v : !!v;
+        const by = (typeof v==='object' && v.by) ? '<span class="by">by '+_esc(v.by)+'</span>' : '';
+        items += '<li class="' + (isDone?'done':'') + '"><span class="mk">' + (isDone?'&#10003;':'&#9633;') + '</span>' +
+                 '<span class="txt">' + _esc(text) + (why?'<span class="why">Why: '+_esc(why)+'</span>':'') + '</span>' + by + '</li>';
+      });
+      chkHtml += '<div class="chk-group ' + colorClass + '">' +
+                 '<h4>' + label + ' <span class="count">' + done + ' / ' + list.length + '</span></h4>' +
+                 '<ul>' + items + '</ul></div>';
+    });
+
+    let noteHtml = note ? '<div class="mod-notes"><b>Notes:</b> ' + _esc(note) + '</div>' : '';
+    let commentsHtml = '';
+    if(cList.length){
+      commentsHtml = '<div class="mod-comments"><h5>Team discussion (' + cList.length + ')</h5><ul>';
+      cList.forEach(function(c){
+        commentsHtml += '<li><span class="cw">' + _esc(c.who) + '</span><span class="cd">' + fmtDateTime(c.when) + '</span><div class="ct">' + _esc(c.txt) + '</div></li>';
+      });
+      commentsHtml += '</ul></div>';
+    }
+
+    modulesHtml +=
+      '<section class="mod status-' + st + '" id="mod-' + s.id + '">' +
+        '<div class="mod-h">' +
+          '<div>' +
+            '<div class="mod-num">MODULE ' + s.num + '</div>' +
+            '<h3 class="mod-title">' + _esc(s.title) + '</h3>' +
+            '<div class="mod-sub">' + _esc(s.sub) + '</div>' +
+          '</div>' +
+          '<span class="mod-badge b-' + st + '">' + badgeText + '</span>' +
+        '</div>' +
+        '<p class="mod-desc">' + _esc(s.desc) + '</p>' +
+        chkHtml + noteHtml + commentsHtml +
+      '</section>';
+  });
+
+  let brokenBanner = '';
+  if(brokenList.length){
+    brokenBanner = '<div class="banner broken">' +
+      '<div class="bl">Broken modules requiring attention (' + brokenList.length + ')</div>' +
+      '<ul>' +
+      brokenList.map(function(s){
+        return '<li><a href="#mod-' + s.id + '">' + s.num + ' - ' + _esc(s.title) + '</a>' +
+               ((run.notes||{})[s.id] ? ' - ' + _esc((run.notes||{})[s.id]) : '') + '</li>';
+      }).join('') +
+      '</ul></div>';
+  }
+
+  const testersLine = (run.testers||[]).length ? _esc((run.testers||[]).join(', ')) : '(none recorded)';
+  const summaryBox = run.summary ? '<div class="run-summary"><b>Summary notes:</b><br>' + _esc(run.summary) + '</div>' : '';
+
+  // Compact table of contents
+  let tocHtml = '<div class="toc"><b>Modules:</b> ';
+  tocHtml += STAGES.map(function(s){
+    const st = (run.statuses||{})[s.id] || 'pending';
+    return '<a href="#mod-' + s.id + '" class="toc-item toc-' + st + '">' + s.num + ' ' + _esc(s.title) + '</a>';
+  }).join('');
+  tocHtml += '</div>';
+
+  return '<!DOCTYPE html>\n<html lang="en"><head><meta charset="UTF-8">' +
+    '<meta name="viewport" content="width=device-width, initial-scale=1.0">' +
+    '<title>' + _esc(title) + '</title>' +
+    '<style>' + REPORT_CSS + '</style>' +
+    '</head><body>' +
+    '<div class="wrap">' +
+      '<header>' +
+        '<div class="brand">Binder OS - QA Report</div>' +
+        '<h1>' + _esc(run.label || (run.isInProgress?'Current run (in progress)':'Untitled run')) + '</h1>' +
+        (run.isInProgress ? '<div class="ip-tag">IN PROGRESS - not yet completed</div>' : '') +
+        '<div class="meta">' +
+          '<div><b>Started</b> ' + fmtDateTime(run.startedAt||0) + ' by ' + _esc(run.startedBy||'?') + '</div>' +
+          (run.completedAt ? '<div><b>Completed</b> ' + fmtDateTime(run.completedAt) + ' by ' + _esc(run.completedBy||'?') + '</div>' : '') +
+          '<div><b>Duration</b> ' + fmtDuration(durMs) + '</div>' +
+          '<div><b>Testers</b> ' + testersLine + '</div>' +
+        '</div>' +
+      '</header>' +
+
+      '<section class="summary">' +
+        '<div class="s-card pass"><div class="n">' + c.pass + '</div><div class="l">All pass</div></div>' +
+        '<div class="s-card broken"><div class="n">' + c.broken + '</div><div class="l">Broken</div></div>' +
+        '<div class="s-card partial"><div class="n">' + c.partial + '</div><div class="l">Partial</div></div>' +
+        '<div class="s-card pending"><div class="n">' + c.pending + '</div><div class="l">Not tested</div></div>' +
+        '<div class="s-card overall"><div class="n">' + passPct + '%</div><div class="l">Pass rate</div></div>' +
+      '</section>' +
+
+      summaryBox +
+      brokenBanner +
+      tocHtml +
+
+      '<div class="modules">' + modulesHtml + '</div>' +
+
+      '<footer>' +
+        'Generated ' + fmtDateTime(Date.now()) + ' by Binder OS Team QA tool. ' +
+        'This is a static read-only snapshot. To run new tests, open the QA tool and start a fresh run.' +
+      '</footer>' +
+    '</div>' +
+    '</body></html>';
+}
+
+const REPORT_CSS = "\
+:root{--bg:#fafbfc;--ink:#1f2937;--muted:#6b7280;--dim:#9ca3af;--line:#e5e7eb;--panel:#ffffff;--panel2:#f3f4f6;\
+--pass:#059669;--broken:#dc2626;--partial:#2563eb;--pending:#9ca3af;--accent:#2563eb;--accent2:#059669;\
+--h:#2563eb;--b:#7c3aed;--f:#ea580c}\
+*{box-sizing:border-box}body{margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;\
+background:var(--bg);color:var(--ink);font-size:14px;line-height:1.6}\
+.wrap{max-width:1080px;margin:0 auto;padding:36px 28px 80px}\
+header{border-bottom:2px solid var(--line);padding-bottom:24px;margin-bottom:28px}\
+.brand{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;font-weight:600;margin-bottom:6px}\
+header h1{margin:0 0 10px;font-size:26px;font-weight:700;color:var(--ink)}\
+.ip-tag{display:inline-block;background:#fef3c7;color:#92400e;padding:3px 10px;border-radius:12px;\
+font-size:11px;font-weight:600;letter-spacing:.5px;margin-bottom:10px}\
+.meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:8px 20px;font-size:13px;color:var(--muted);margin-top:12px}\
+.meta b{color:var(--ink);font-weight:600}\
+.summary{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin:0 0 24px}\
+.s-card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;text-align:center}\
+.s-card .n{font-size:32px;font-weight:700;line-height:1}\
+.s-card .l{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-top:6px;font-weight:600}\
+.s-card.pass .n{color:var(--pass)} .s-card.broken .n{color:var(--broken)}\
+.s-card.partial .n{color:var(--partial)} .s-card.pending .n{color:var(--pending)}\
+.s-card.overall .n{color:var(--accent)}\
+.run-summary{background:#eff6ff;border-left:4px solid var(--partial);padding:12px 16px;border-radius:0 6px 6px 0;\
+margin:0 0 24px;font-size:13.5px;line-height:1.6}\
+.banner.broken{background:#fef2f2;border-left:4px solid var(--broken);padding:14px 18px;border-radius:0 6px 6px 0;\
+margin:0 0 24px}\
+.banner.broken .bl{font-weight:600;color:var(--broken);margin-bottom:6px;font-size:14px}\
+.banner.broken ul{margin:6px 0 0;padding-left:18px}\
+.banner.broken ul li{font-size:13px;margin:3px 0}\
+.banner.broken ul li a{color:var(--broken);font-weight:500}\
+.toc{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 14px;\
+margin:0 0 28px;font-size:12px;line-height:2}\
+.toc b{margin-right:10px;color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.5px}\
+.toc-item{text-decoration:none;padding:3px 9px;border-radius:12px;font-family:monospace;font-size:11px;\
+margin-right:5px;display:inline-block;white-space:nowrap}\
+.toc-working{background:#d1fae5;color:var(--pass)}\
+.toc-broken{background:#fecaca;color:var(--broken)}\
+.toc-inprog{background:#dbeafe;color:var(--partial)}\
+.toc-pending{background:#f3f4f6;color:var(--muted)}\
+.mod{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:22px 24px;margin:0 0 16px;\
+page-break-inside:avoid}\
+.mod.status-broken{border-left:4px solid var(--broken)}\
+.mod.status-working{border-left:4px solid var(--pass)}\
+.mod.status-inprog{border-left:4px solid var(--partial)}\
+.mod.status-pending{border-left:4px solid var(--pending)}\
+.mod-h{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:10px;\
+padding-bottom:12px;border-bottom:1px solid var(--line)}\
+.mod-num{font-family:monospace;font-size:11px;color:var(--accent2);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:4px}\
+.mod-title{margin:0;font-size:17px;font-weight:600}\
+.mod-sub{font-size:12px;color:var(--muted);margin-top:2px}\
+.mod-badge{padding:5px 12px;border-radius:16px;font-size:11px;font-weight:700;text-transform:uppercase;\
+letter-spacing:.5px;white-space:nowrap;flex-shrink:0}\
+.mod-badge.b-working{background:#d1fae5;color:var(--pass)}\
+.mod-badge.b-broken{background:#fecaca;color:var(--broken)}\
+.mod-badge.b-inprog{background:#dbeafe;color:var(--partial)}\
+.mod-badge.b-pending{background:#f3f4f6;color:var(--muted)}\
+.mod-desc{font-size:13px;color:var(--muted);margin:0 0 16px;line-height:1.6}\
+.chk-group{margin:12px 0}\
+.chk-group h4{margin:0 0 6px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;\
+font-weight:600;display:flex;align-items:center;gap:8px}\
+.chk-group h4:before{content:'';width:8px;height:8px;border-radius:50%;display:inline-block}\
+.chk-group.a-h h4:before{background:var(--h)} .chk-group.a-h h4{color:var(--h)}\
+.chk-group.a-b h4:before{background:var(--b)} .chk-group.a-b h4{color:var(--b)}\
+.chk-group.a-f h4:before{background:var(--f)} .chk-group.a-f h4{color:var(--f)}\
+.chk-group h4 .count{background:var(--panel2);color:var(--muted);padding:1px 8px;border-radius:12px;\
+font-family:monospace;font-size:10px;font-weight:500}\
+.chk-group ul{list-style:none;padding:0;margin:0}\
+.chk-group li{padding:6px 0;font-size:13px;color:var(--ink);position:relative;display:flex;align-items:flex-start;gap:8px;\
+border-bottom:1px dashed var(--line);flex-wrap:wrap}\
+.chk-group li:last-child{border-bottom:none}\
+.chk-group li .mk{color:var(--muted);font-family:monospace;flex-shrink:0;margin-top:1px;font-size:15px;font-weight:bold}\
+.chk-group li.done .mk{color:var(--pass)}\
+.chk-group li.done .txt{color:var(--muted);text-decoration:line-through}\
+.chk-group li .txt{flex:1;line-height:1.5}\
+.chk-group li .why{display:block;font-size:11.5px;color:var(--dim);margin-top:2px;font-style:italic}\
+.chk-group li .by{font-family:monospace;font-size:10.5px;color:var(--muted);background:var(--panel2);\
+padding:2px 7px;border-radius:10px;border:1px solid var(--line);white-space:nowrap}\
+.mod-notes{background:#fffbeb;border-left:3px solid #f59e0b;padding:10px 14px;border-radius:0 6px 6px 0;\
+margin-top:12px;font-size:13px;line-height:1.6}\
+.mod-notes b{color:#92400e}\
+.mod-comments{margin-top:14px;background:var(--panel2);border-radius:8px;padding:12px 14px}\
+.mod-comments h5{margin:0 0 8px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;font-weight:600}\
+.mod-comments ul{list-style:none;padding:0;margin:0}\
+.mod-comments li{padding:6px 0;border-bottom:1px dashed var(--line);font-size:12.5px}\
+.mod-comments li:last-child{border-bottom:none}\
+.mod-comments .cw{font-weight:600;color:var(--accent);margin-right:8px;font-size:12px}\
+.mod-comments .cd{font-family:monospace;font-size:10px;color:var(--dim);float:right}\
+.mod-comments .ct{margin-top:2px;line-height:1.5;color:var(--ink)}\
+footer{margin-top:40px;padding-top:20px;border-top:1px solid var(--line);font-size:11.5px;color:var(--muted);text-align:center}\
+@media (max-width:820px){.summary{grid-template-columns:repeat(2,1fr)}.meta{grid-template-columns:1fr}}\
+@media print{\
+body{background:#fff}.wrap{max-width:none;padding:20px}.mod{border:1px solid #ccc;box-shadow:none}\
+.mod-badge{border:1px solid currentColor}}\
+";
+
+function showPublish(){ document.getElementById('publish-modal').classList.add('show'); }
+function hidePublish(){ document.getElementById('publish-modal').classList.remove('show'); }
+
+// ============================================================================
+// MODALS
+// ============================================================================
+function showTab(name){
+  document.querySelectorAll('.tabs .t').forEach(function(t){t.classList.remove('active');});
+  document.querySelectorAll('.tab-body').forEach(function(b){b.classList.remove('active');});
+  event.target.classList.add('active');
+  document.getElementById('tab-'+name).classList.add('active');
+}
+function saveSetup(){
+  const activeTab=document.querySelector('.tab-body.active').id;
+  let name,sessionId='default',fbConfig=null;
+  if(activeTab==='tab-quick'){
+    name=(document.getElementById('in-name').value||'').trim();
+    if(!name){alert('Please enter your name');return;}
+  } else {
+    name=(document.getElementById('in-name-team').value||'').trim();
+    sessionId=(document.getElementById('in-session').value||'').trim()||'default';
+    const cfgStr=(document.getElementById('in-fbconfig').value||'').trim();
+    if(!name){alert('Please enter your name');return;}
+    if(cfgStr){
+      try{
+        fbConfig=JSON.parse(cfgStr);
+        if(!fbConfig.databaseURL){alert('Firebase config must include a databaseURL field');return;}
+      }catch(e){alert('Invalid JSON in Firebase config');return;}
+    }
+  }
+  state.userName=name;
+  state.userId=state.userId||genUserId();
+  state.userColor=colorFromName(name);
+  state.sessionId=sessionId;
+  state.fbConfig=fbConfig;
+  saveLocal();
+  document.getElementById('setup-modal').classList.remove('show');
+  if(fbConfig) initFirebase();
+  renderFbStatus(); renderPresence();
+}
+function showFirebaseHelp(){ document.getElementById('fb-help-modal').classList.add('show'); }
+function hideFbHelp(){ document.getElementById('fb-help-modal').classList.remove('show'); }
+function showShare(){
+  document.getElementById('share-session').value=state.sessionId;
+  document.getElementById('share-fbconfig').value=state.fbConfig?JSON.stringify(state.fbConfig,null,2):'(not configured - solo mode)';
+  document.getElementById('share-modal').classList.add('show');
+}
+function hideShare(){ document.getElementById('share-modal').classList.remove('show'); }
+
+function showComplete(){
+  const c={pass:0,broken:0,partial:0,pending:0};
+  STAGES.forEach(function(s){
+    const st=nodeStatus(s.id);
+    if(st==='working') c.pass++;
+    else if(st==='broken') c.broken++;
+    else if(st==='inprog') c.partial++;
+    else c.pending++;
+  });
+  const dur=state.currentRun.startedAt?fmtDuration(Date.now()-state.currentRun.startedAt):'not started';
+  const testers=(state.currentRun.testers||[]).join(', ')||'(none)';
+  document.getElementById('complete-summary').innerHTML=
+    '<div class="rd-summary" style="margin:0 0 16px">'+
+      '<div class="box pass"><div class="n">'+c.pass+'</div><div class="l">Pass</div></div>'+
+      '<div class="box broken"><div class="n">'+c.broken+'</div><div class="l">Broken</div></div>'+
+      '<div class="box partial"><div class="n">'+c.partial+'</div><div class="l">Partial</div></div>'+
+      '<div class="box pending"><div class="n">'+c.pending+'</div><div class="l">Not tested</div></div>'+
+    '</div>'+
+    '<div style="font-size:12px;color:var(--muted);margin-bottom:14px">'+
+    '<b>Duration:</b> '+dur+' · <b>Testers:</b> '+escapeHtml(testers)+'</div>';
+  document.getElementById('complete-label').value='';
+  document.getElementById('complete-notes').value='';
+  document.getElementById('complete-modal').classList.add('show');
+}
+function hideComplete(){ document.getElementById('complete-modal').classList.remove('show'); }
+function showHistory(){ document.getElementById('history-modal').classList.add('show'); renderHistory(); }
+function hideHistory(){ document.getElementById('history-modal').classList.remove('show'); }
+function hideRunDetail(){ document.getElementById('rundetail-modal').classList.remove('show'); state.viewingRun=null; }
+
+// ============================================================================
+// INIT
+// ============================================================================
+loadLocal();
+if(!state.userName){
+  document.getElementById('setup-modal').classList.add('show');
+} else {
+  if(state.fbConfig) initFirebase();
+  renderFbStatus();
+}
+renderNodes(); renderArrows(); renderDetail(); renderPresence(); updateProgress(); renderRunInfo();
+
+setInterval(function(){ renderRunInfo(); if(state.selected) renderDetail(); },30000);
+setInterval(function(){
+  const now=Date.now();
+  Object.keys(recentlyChangedByRemote).forEach(function(k){
+    if(now-recentlyChangedByRemote[k]>3000) delete recentlyChangedByRemote[k];
+  });
+},4000);
+</script>
+</body>
+</html>
